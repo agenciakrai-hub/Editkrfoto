@@ -194,9 +194,8 @@ class TestXmpGeneration:
         # Verify ZIP contents
         z = zipfile.ZipFile(io.BytesIO(r.content))
         names = z.namelist()
-        assert "IMG_001.xmp" in names
-        assert "IMG_002.xmp" in names
-        assert "LEEME.txt" in names
+        # ZIP must contain EXCLUSIVELY .xmp entries (no LEEME.txt or extras)
+        assert sorted(names) == sorted(["IMG_001.xmp", "IMG_002.xmp"])
 
         xmp1 = z.read("IMG_001.xmp").decode("utf-8")
         assert "crs:Exposure2012" in xmp1
@@ -220,3 +219,19 @@ class TestXmpGeneration:
         r = requests.post(f"{BASE_URL}/api/projects/{project_id}/generate-xmp",
                           json={"filenames": ["a.CR2"]})
         assert r.status_code == 401
+
+
+    def test_generate_xmp_exclusively_xmp_A_CR3_B_NEF(self, auth_client, project_id):
+        """Review-request explicit check: filenames ['A.CR3','B.NEF'] -> ZIP entries EXACTLY ['A.xmp','B.xmp']."""
+        payload = {
+            "filenames": ["A.CR3", "B.NEF"],
+            "parameters": {"exposure": 0.1, "contrast": 5, "temperature": 5500},
+            "camera_profile": "Adobe Standard",
+            "precision_mode": "balanced",
+        }
+        r = auth_client.post(f"{BASE_URL}/api/projects/{project_id}/generate-xmp", json=payload)
+        assert r.status_code == 200, r.text
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        assert sorted(z.namelist()) == ["A.xmp", "B.xmp"]
+        xmp_a = z.read("A.xmp").decode("utf-8")
+        assert "crs:" in xmp_a and "A.CR3" in xmp_a

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles, ArrowRight, Layers, CheckCircle2, Images } from "lucide-react";
 import { SAMPLE_THUMBS } from "@/lib/rawSelection";
-import api from "@/lib/api";
+import { analyzeFile, groupAndSelect, mapLimit } from "@/lib/imageAnalysis";
 
 export default function SelectionStep({ files, onContinue }) {
   const [progress, setProgress] = useState(0);
@@ -10,39 +10,35 @@ export default function SelectionStep({ files, onContinue }) {
 
   useEffect(() => {
     let active = true;
-    let p = 0;
-    const timer = setInterval(() => {
-      p = Math.min(95, p + Math.random() * 12 + 5);
-      setProgress(Math.round(p));
-    }, 220);
-
     (async () => {
       try {
-        const meta = Array.from(files).map((f) => ({ name: f.name, size: f.size, last_modified: f.lastModified }));
-        const res = await api.post("/selection/analyze", { files: meta });
+        const arr = Array.from(files);
+        // Analiza el contenido real (nitidez + exposición + hash visual) de cada RAW.
+        const metrics = await mapLimit(arr, 3, (f) => analyzeFile(f), (done) => {
+          if (active) setProgress(Math.round((done / arr.length) * 100));
+        });
         if (!active) return;
-        const byName = new Map(Array.from(files).map((f) => [f.name, f]));
-        const photos = res.data.photos.map((p, i) => ({
-          id: `${p.burst_id}-${i}-${p.name}`,
-          name: p.name,
-          size: p.size,
-          burstId: p.burst_id,
-          score: p.score,
+        const items = arr.map((f, i) => ({ name: f.name, size: f.size, file: f, metrics: metrics[i] }));
+        const analyzed = groupAndSelect(items);
+        const photos = analyzed.map((it, i) => ({
+          id: `${it.burstId}-${i}-${it.name}`,
+          name: it.name,
+          size: it.size,
+          burstId: it.burstId,
+          score: it.score,
           thumb: SAMPLE_THUMBS[i % SAMPLE_THUMBS.length],
-          file: byName.get(p.name),
-          isBest: p.is_best,
-          selectedForEdit: p.selected_for_edit,
+          file: it.file,
+          isBest: it.isBest,
+          selectedForEdit: it.selectedForEdit,
         }));
-        clearInterval(timer);
-        setProgress(100);
-        setResult({ photos, total: res.data.total, bursts: res.data.bursts, selected: res.data.selected });
+        const bursts = new Set(photos.map((p) => p.burstId)).size;
+        const selected = photos.filter((p) => p.selectedForEdit).length;
+        setResult({ photos, total: photos.length, bursts, selected });
       } catch (e) {
         if (active) setError("No se pudo analizar la selección. Inténtalo de nuevo.");
-        clearInterval(timer);
       }
     })();
-
-    return () => { active = false; clearInterval(timer); };
+    return () => { active = false; };
   }, [files]);
 
   if (error) {
@@ -60,26 +56,27 @@ export default function SelectionStep({ files, onContinue }) {
           <Sparkles className="h-5 w-5 animate-pulse text-emerald-400" />
           <h2 className="font-display text-lg font-semibold">Analizando con IA…</h2>
         </div>
-        <p className="mt-1.5 text-sm text-zinc-500">Agrupando ráfagas y evaluando nitidez, ojos y composición.</p>
+        <p className="mt-1.5 text-sm text-zinc-500">Evaluando enfoque y exposición de cada toma y agrupando ráfagas por similitud visual.</p>
         <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-zinc-800">
           <div className="h-full rounded-full bg-emerald-400 transition-all duration-200" style={{ width: `${progress}%` }} />
         </div>
-        <p className="mt-2 font-mono text-xs text-zinc-500">{progress}% · {files.length} archivos</p>
+        <p className="mt-2 font-mono text-xs text-zinc-500">{progress}% · {Array.from(files).length} archivos</p>
       </section>
     );
   }
 
   const stats = [
     { icon: Images, label: "Fotos totales", value: result.total },
-    { icon: Layers, label: "Ráfagas detectadas", value: result.bursts },
-    { icon: CheckCircle2, label: "Mejores tomas (verde)", value: result.selected, accent: true },
+    { icon: Layers, label: "Secuencias detectadas", value: result.bursts },
+    { icon: CheckCircle2, label: "Seleccionadas (verde)", value: result.selected, accent: true },
   ];
 
   return (
     <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-6" data-testid="selection-result">
       <h2 className="font-display text-lg font-semibold">Selección IA completada</h2>
       <p className="mt-1.5 text-sm text-zinc-500">
-        La IA agrupó las ráfagas y marcó en verde la mejor toma de cada una. Podrás ajustar la selección en el siguiente paso.
+        La IA agrupó las secuencias por similitud y eligió la toma más nítida y mejor expuesta de cada una.
+        Cuando el resultado es ambiguo, marca más de una para que tú decidas en la revisión.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">

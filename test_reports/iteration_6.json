@@ -1,0 +1,34 @@
+{
+  "summary": "Verified the RAW AI Studio selection-bug fix and xmp-only ZIP output. Jest suite for the new pure selection engine (src/lib/selectionLogic.js): 6/6 pass. Backend pytest (excluding paid Wikipedia LLM path): 31/31 pass — auth, projects CRUD, style-profiles, cloud-jobs full lifecycle+download, photographer-styles auth/scoping/failure, startup reaper, /api/selection/analyze, and generate-xmp. Confirmed independently that POST /api/projects/{id}/generate-xmp with ['A.CR3','B.NEF'] returns a ZIP whose entries are EXACTLY ['A.xmp','B.xmp'] (no LEEME.txt, no extras) and .xmp content contains crs: attributes (crs:Exposure2012, crs:CameraProfile, crs:Contrast2012, crs:Temperature, RawFileName). Same exclusivity holds for GET /api/cloud-jobs/{id}/download.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_raw_ai_studio.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/backend/tests/test_iteration5_selection.py",
+    "/app/frontend/src/lib/selectionLogic.test.js",
+    "/app/test_reports/pytest/results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "selectionLogic.js: correctly replaces prior md5-of-filename randomness with real perceptual-hash grouping + sharpness/exposure combined score; pure & fully unit-testable — good.",
+    "AMBIGUOUS_MARGIN logic uses `>= best.combined * 0.92` — this correctly includes the best itself and any runner-up within 8%.",
+    "hamming() uses BigInt XOR + bit loop — correct for 64-bit pHashes; test covers it.",
+    "server.build_zip() now writes only .xmp entries (LEEME.txt removed) — matches product requirement of exclusively Lightroom-compatible sidecars.",
+    "Two pre-existing tests still asserted `LEEME.txt in names`; updated to assert exclusivity (== set of xmp filenames). This is a stale-test fix, not a functional change.",
+    "test_iteration5_selection.py used os.environ['MONGO_URL'] which is not exported to the pytest process (only to supervisor-managed backend); made it fall back to /app/backend/.env like sibling test files. Small robustness fix.",
+    "Note: canvas/createImageBitmap-based analyzeFile and RAW-thumbnail slice(0,4MB) path are not headless-testable without real CR3/NEF fixtures; verifiable proof is limited to the pure selection engine (jest) + XMP output (pytest), which the request itself acknowledges."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_raw_ai_studio.py (removed LEEME.txt assertion, added explicit A.CR3/B.NEF exclusivity test)",
+    "/app/backend/tests/test_iteration2.py (removed LEEME.txt assertion; asserts exact xmp-only set)",
+    "/app/backend/tests/test_iteration5_selection.py (MONGO_URL fallback to backend/.env)"
+  ],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "100% (6/6 jest)"},
+  "test_credentials": "Seeded via mongo per /app/memory/test_credentials.md inside fixtures.",
+  "seed_data_creation": "Per-test user + session token inserted into test_database.users / user_sessions; cleaned up in teardown.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All jest+pytest green. If new selection features are added, keep selectionLogic.js pure so the jest suite stays authoritative. Real RAW-file browser flow (folder picker + 5000 photos) still requires manual/e2e testing with fixtures — not covered here.",
+  "rca of the issue": "Original bug: quality score was Math.abs(md5(filename)) which is deterministic-but-arbitrary per name, so 'best of sequence' selection was effectively random. Fix: replaced with actual image content metrics (Laplacian variance sharpness + exposure histogram + 8x8 DCT/average-hash pHash), then group by pHash Hamming ≤8 and pick the sharpest; when a runner-up scores ≥92% of the best, also select it (ambiguity). Pure logic isolated in selectionLogic.js and covered by 6 jest tests. XMP-output cleanup (removing LEEME.txt from ZIP) verified via updated pytest asserting exact namelist equality."
+}

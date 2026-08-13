@@ -362,12 +362,6 @@ def build_zip(project_name, filenames, parameters, camera_profile, precision_mod
         for fname in filenames:
             base = fname.rsplit(".", 1)[0]
             zf.writestr(f"{base}.xmp", build_xmp(fname, parameters, camera_profile or "Adobe Standard", precision_mode or "balanced"))
-        readme = (f"RAW AI Studio — Paquete XMP\nProyecto: {project_name}\n"
-                  f"Perfil de cámara: {camera_profile}\nModo de precisión: {precision_mode}\n"
-                  f"Preset: {preset_name or 'Personalizado'}\nArchivos XMP: {len(filenames)}\n\n"
-                  "Coloca cada archivo .xmp junto a su RAW correspondiente en Lightroom / Camera Raw.\n"
-                  "Los archivos RAW originales NO se modifican.\n")
-        zf.writestr("LEEME.txt", readme)
     buf.seek(0)
     return buf
 

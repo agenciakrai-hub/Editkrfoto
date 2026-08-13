@@ -54,6 +54,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Exportar perfil: descarga un estilo detectado como `.xmp` listo para Lightroom (buildStyleXmp).
 - Verificado: compilación limpia + XMP end-to-end (base auto + creativa con atributos crs correctos). Flujos UI internos dependen del selector de carpeta (no automatizable headless).
 
+### Iteración 7 (2026-08-13): selección precisa + motor optimizado 5000 fotos
+- Selección por CONTENIDO real (antes era un hash aleatorio del nombre): nitidez (varianza del laplaciano) + exposición (histograma) + perceptual hash (average-hash 8x8) para agrupar por similitud visual. Elige la más nítida/mejor expuesta de cada secuencia; si hay empate (≥92% de la mejor) selecciona más de una; nunca descarta fotos sin métrica. Lógica pura en `src/lib/selectionLogic.js` (6 tests jest).
+- Motor optimizado para miles de fotos: `extractPreviewBlob` lee SOLO los primeros 4MB del RAW con `file.slice` (no carga el archivo entero) para sacar la miniatura JPEG incrustada; cola con concurrencia limitada (mapLimit) + barra de progreso en SelectionStep.
+- Salida final EXCLUSIVAMENTE `.xmp`: `build_zip` genera un ZIP solo con los sidecars .xmp (sin LEEME) para descargar y pegar en la carpeta raíz.
+- Verificado: jest 6/6 (motor selección) + backend 31/31 (regresión + ZIP xmp-only). Sin bugs.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

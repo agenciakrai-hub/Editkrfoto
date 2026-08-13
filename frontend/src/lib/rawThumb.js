@@ -28,15 +28,33 @@ function findLargestJpeg(bytes) {
 
 export async function extractThumb(file) {
   if (!file) return null;
+  const blob = await extractPreviewBlob(file);
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
+// Lee SOLO los primeros MB del RAW (file.slice) para extraer la miniatura/preview JPEG incrustada.
+// Evita cargar archivos de 30-60MB en memoria: clave para manejar miles de fotos.
+const HEAD_BYTES = 4 * 1024 * 1024;
+
+async function readHead(file, len) {
+  const slice = file.slice(0, Math.min(len, file.size));
+  return new Uint8Array(await slice.arrayBuffer());
+}
+
+export async function extractPreviewBlob(file) {
+  if (!file) return null;
   const ext = extOf(file.name);
-  if (ext === "jpg" || ext === "jpeg") return URL.createObjectURL(file);
+  if (ext === "jpg" || ext === "jpeg") return file;
   try {
-    const buf = await file.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    const found = findLargestJpeg(bytes);
+    let bytes = await readHead(file, HEAD_BYTES);
+    let found = findLargestJpeg(bytes);
+    // Si en la cabecera no hay un JPEG utilizable, como último recurso leemos el archivo completo.
+    if ((!found || found.len < 2048) && file.size > HEAD_BYTES) {
+      bytes = new Uint8Array(await file.arrayBuffer());
+      found = findLargestJpeg(bytes);
+    }
     if (!found || found.len < 1024) return null;
-    const blob = new Blob([bytes.slice(found.start, found.end)], { type: "image/jpeg" });
-    return URL.createObjectURL(blob);
+    return new Blob([bytes.slice(found.start, found.end)], { type: "image/jpeg" });
   } catch {
     return null;
   }

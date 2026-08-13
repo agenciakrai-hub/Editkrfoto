@@ -17,7 +17,8 @@ from datetime import datetime, timezone, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/') or \
     open('/app/frontend/.env').read().split('REACT_APP_BACKEND_URL=')[1].split('\n')[0].strip()
-MONGO_URL = os.environ['MONGO_URL']
+MONGO_URL = os.environ.get('MONGO_URL') or \
+    open('/app/backend/.env').read().split('MONGO_URL=')[1].split('\n')[0].strip().strip('"')
 DB_NAME = os.environ.get('DB_NAME', 'test_database')
 
 ANALYZE = f"{BASE_URL}/api/selection/analyze"

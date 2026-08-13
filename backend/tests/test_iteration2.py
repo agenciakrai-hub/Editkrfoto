@@ -184,10 +184,7 @@ class TestCloudJobs:
         assert r.headers.get("content-type", "").startswith("application/zip")
         z = zipfile.ZipFile(io.BytesIO(r.content))
         names = set(z.namelist())
-        assert "IMG_A.xmp" in names
-        assert "IMG_B.xmp" in names
-        assert "IMG_C.xmp" in names
-        assert "LEEME.txt" in names
+        assert names == {"IMG_A.xmp", "IMG_B.xmp", "IMG_C.xmp"}  # exclusively .xmp
         xmp = z.read("IMG_A.xmp").decode("utf-8")
         assert "IMG_A.CR2" in xmp
         assert 'crs:CameraProfile="Adobe Standard"' in xmp
