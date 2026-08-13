@@ -11,7 +11,7 @@ import PresetParamsStep from "@/components/studio/PresetParamsStep";
 import ProcessingModeChoice from "@/components/studio/ProcessingModeChoice";
 import ProcessingStep from "@/components/studio/ProcessingStep";
 import ReportStep from "@/components/studio/ReportStep";
-import { fullParametersFromConfig } from "@/lib/paramDefs";
+import { creativeParametersFromConfig, AUTO_BASIC_PARAMS } from "@/lib/paramDefs";
 import { analyzeFolder } from "@/lib/rawSelection";
 import api from "@/lib/api";
 
@@ -45,8 +45,9 @@ export default function Studio() {
   };
 
   const buildPayload = () => ({
-    filenames: sendPhotos.map((p) => p.name),
-    parameters: fullParametersFromConfig(presetInfo.config),
+    photos: sendPhotos.map((p) => ({ filename: p.name, basic: p.basic || AUTO_BASIC_PARAMS })),
+    creative_params: presetInfo.presetXmpText ? {} : creativeParametersFromConfig(presetInfo.config),
+    preset_xmp: presetInfo.presetXmpText || null,
     camera_profile: profileChoice.profile,
     precision_mode: presetInfo.precisionMode,
     preset_name: presetInfo.presetName,

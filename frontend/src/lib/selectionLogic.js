@@ -8,6 +8,23 @@ export function hamming(a, b) {
 export const PHASH_THRESHOLD = 8;    // distancia máx. para "misma secuencia"
 export const AMBIGUOUS_MARGIN = 0.92; // 2ª mejor ≥92% de la mejor → también se elige
 
+function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+
+// Corrección de luz AUTOMÁTICA POR FOTO a partir de las métricas medidas (luma + recorte).
+// Cada foto recibe su propio ajuste básico (no un valor fijo para todas).
+export function autoBasicFromMetrics(m) {
+  if (!m) return { exposure: 0.10, contrast: 0, highlights: -15, shadows: 15, whites: 5, blacks: -5 };
+  const luma = m.luma != null ? m.luma : 118;
+  const sc = m.shadowClip || 0;
+  const hc = m.highClip || 0;
+  const exposure = clamp((118 - luma) / 70, -1.5, 1.5);
+  const highlights = clamp(hc > 0.02 ? -Math.round(hc * 500) : -15, -80, 0);
+  const shadows = clamp(sc > 0.02 ? Math.round(sc * 500) : 15, 0, 80);
+  const whites = clamp(hc > 0.05 ? -10 : 5, -30, 30);
+  const blacks = clamp(sc > 0.05 ? -15 : -5, -40, 20);
+  return { exposure: Math.round(exposure * 100) / 100, contrast: 0, highlights, shadows, whites, blacks };
+}
+
 // items: [{ name, size, file, metrics:{sharpness,exposure,hash}|null }]
 // Agrupa por similitud visual (pHash) y marca la mejor toma de cada secuencia (o varias si hay empate).
 export function groupAndSelect(items) {

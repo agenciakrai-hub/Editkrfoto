@@ -39,6 +39,7 @@ export default function PresetParamsStep({ count, onContinue }) {
   const [config, setConfig] = useState(defaultParameterConfig());
   const [precision, setPrecision] = useState("balanced");
   const [presetName, setPresetName] = useState(null);
+  const [presetXmpText, setPresetXmpText] = useState(null);
   const [profiles, setProfiles] = useState([]);
   const [saveName, setSaveName] = useState("");
   const [showSave, setShowSave] = useState(false);
@@ -46,7 +47,7 @@ export default function PresetParamsStep({ count, onContinue }) {
 
   useEffect(() => { api.get("/style-profiles").then((r) => setProfiles(r.data)).catch(() => {}); }, []);
 
-  const pickPreset = (preset) => { setConfig(applyPreset(defaultParameterConfig(), preset)); setPresetName(preset.name); };
+  const pickPreset = (preset) => { setConfig(applyPreset(defaultParameterConfig(), preset)); setPresetName(preset.name); setPresetXmpText(null); };
   const setVal = (key, value) => setConfig((c) => ({ ...c, [key]: { ...c[key], value: Number(value) } }));
   const setEnabled = (key, enabled) => setConfig((c) => ({ ...c, [key]: { ...c[key], enabled } }));
 
@@ -58,16 +59,17 @@ export default function PresetParamsStep({ count, onContinue }) {
     const { config: parsed } = parseXmp(text);
     const creative = {};
     for (const k of CREATIVE_KEYS) if (parsed[k]?.enabled) creative[k] = parsed[k].value;
-    if (!Object.keys(creative).length) { toast.error("El .xmp no contiene ajustes creativos (claridad/vibración/saturación)"); return; }
-    setConfig(configFromCreative(creative));
+    setConfig(configFromCreative(creative)); // para la vista previa; el look completo va en presetXmpText
     setPresetName(file.name.replace(/\.xmp$/i, ""));
-    toast.success("Preset .xmp cargado", { description: `${Object.keys(creative).length} ajustes creativos aplicados` });
+    setPresetXmpText(text); // se conserva el preset COMPLETO (curvas, HSL, textura…) y solo la IA cambia los básicos por foto
+    toast.success("Preset .xmp cargado", { description: "Se conserva el look completo; la IA solo ajusta la luz básica por foto" });
   };
 
   const applyProfile = (p) => {
     setConfig(configFromCreative(p.parameters));
     setPrecision(p.precision_mode || "balanced");
     setPresetName(p.name);
+    setPresetXmpText(null);
     toast.success(`Perfil "${p.name}" aplicado`);
   };
 
@@ -97,6 +99,7 @@ export default function PresetParamsStep({ count, onContinue }) {
 
       <PhotographerStyles activeName={presetName} onUseStyle={(prof) => {
         setPresetName(prof.name);
+        setPresetXmpText(null);
         if (prof.precision_mode) setPrecision(prof.precision_mode);
         const creative = pickCreative(prof.suggested_parameters || {});
         if (Object.keys(creative).length) {
@@ -119,7 +122,7 @@ export default function PresetParamsStep({ count, onContinue }) {
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
               <Upload className="h-3.5 w-3.5" /> Subir .xmp
             </button>
-            <button data-testid="reset-params-btn" onClick={() => { setConfig(defaultParameterConfig()); setPresetName(null); }}
+            <button data-testid="reset-params-btn" onClick={() => { setConfig(defaultParameterConfig()); setPresetName(null); setPresetXmpText(null); }}
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
               <RotateCcw className="h-3.5 w-3.5" /> Restablecer
             </button>
@@ -229,7 +232,7 @@ export default function PresetParamsStep({ count, onContinue }) {
         <div className="mt-6"><BeforeAfterPreview params={fullParametersFromConfig(config)} /></div>
 
         <button data-testid="presets-continue-btn" disabled={!presetName}
-          onClick={() => onContinue({ config, precisionMode: precision, presetName })}
+          onClick={() => onContinue({ config, precisionMode: precision, presetName, presetXmpText })}
           className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100">
           Continuar <ArrowRight className="h-4 w-4" />
         </button>

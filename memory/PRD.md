@@ -60,6 +60,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Salida final EXCLUSIVAMENTE `.xmp`: `build_zip` genera un ZIP solo con los sidecars .xmp (sin LEEME) para descargar y pegar en la carpeta raíz.
 - Verificado: jest 6/6 (motor selección) + backend 31/31 (regresión + ZIP xmp-only). Sin bugs.
 
+### Iteración 8 (2026-08-13): corrección por foto + preset completo
+- Bug "misma corrección de luz a todas": ahora la corrección básica (exposición/luces/sombras/blancos/negros) se calcula AUTOMÁTICAMENTE POR FOTO desde su luma+recorte medidos (`autoBasicFromMetrics`) y se envía por foto. Cada XMP tiene su propia exposición.
+- Bug "el preset de Lightroom no se aplica": el preset .xmp subido se conserva COMPLETO (curvas, HSL, textura, split toning…). El backend solo sustituye los atributos básicos por la corrección per-foto de la IA (`build_photo_xmp` + `_set_crs_attr`); el resto del look pasa intacto.
+- Nuevo payload per-foto: `{photos:[{filename,basic}], creative_params, preset_xmp}` (con compatibilidad al formato antiguo). Cloud jobs también.
+- Verificado: jest 9/9 + backend 36/36. DARK.xmp Exposure +0.85 vs BRIGHT.xmp −0.60; Clarity/Vibrance/Texture del preset preservados. Sin bugs.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

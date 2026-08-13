@@ -2,7 +2,7 @@
 // Extrae SOLO la miniatura JPEG incrustada del RAW (vía file.slice en rawThumb) y mide
 // NITIDEZ (enfoque) y EXPOSICIÓN. El agrupado/selección vive en selectionLogic (puro).
 import { extractPreviewBlob } from "@/lib/rawThumb";
-export { groupAndSelect, hamming, PHASH_THRESHOLD, AMBIGUOUS_MARGIN } from "@/lib/selectionLogic";
+export { groupAndSelect, hamming, autoBasicFromMetrics, PHASH_THRESHOLD, AMBIGUOUS_MARGIN } from "@/lib/selectionLogic";
 
 async function bitmapFromFile(file) {
   const blob = await extractPreviewBlob(file);
@@ -48,7 +48,9 @@ function metricsFromBitmap(bmp) {
   // Exposición: penaliza recorte de altas luces/sombras y medias muy oscuras/claras.
   const total = w * h;
   const avg = sum / total;
-  let exposure = 1 - ((hist[0] / total) * 0.5 + (hist[255] / total) * 0.5);
+  const shadowClip = hist[0] / total;
+  const highClip = hist[255] / total;
+  let exposure = 1 - (shadowClip * 0.5 + highClip * 0.5);
   if (avg < 45) exposure *= avg / 45;
   if (avg > 215) exposure *= (255 - avg) / 40;
   exposure = Math.max(0, Math.min(1, exposure));
@@ -69,7 +71,7 @@ function metricsFromBitmap(bmp) {
   let hash = 0n;
   for (let i = 0; i < 64; i++) if (g8[i] > m8) hash |= (1n << BigInt(i));
 
-  return { sharpness, exposure, hash };
+  return { sharpness, exposure, hash, luma: avg, shadowClip, highClip };
 }
 
 export async function analyzeFile(file) {

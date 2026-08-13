@@ -1,0 +1,27 @@
+{
+  "summary": "Iteration 7 — verified BOTH reported bugs are fixed. (1) Per-photo basic correction: jest suite 9/9 passes including 3 new autoBasicFromMetrics tests (dark luma -> +EV, bright luma -> -EV, differ). Backend /api/projects/{id}/generate-xmp with photos[] returns DARK.xmp with crs:Exposure2012=\"+0.85\" and BRIGHT.xmp with \"-0.60\" (different per photo, matching per-photo basic). (2) Preset passthrough: creative attrs (Clarity2012=30, Vibrance=25, Texture=18, SplitToningShadowHue=220) preserved in every output while Exposure2012 is replaced by the per-photo value (not the preset's +1.50). Legacy filenames+parameters path still works; empty body -> 400. Cloud job accepts photos+preset_xmp, stores them, and download ZIP is .xmp-only with the same per-photo exposure + preserved creative attrs. Full regression: 36/36 pytest tests pass (1 wikipedia/happy paid-LLM test deselected as instructed).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration7_per_photo_and_preset.py",
+    "/app/test_reports/pytest/iteration7_per_photo.xml",
+    "/app/test_reports/pytest/iteration7_regression.xml",
+    "/app/frontend/src/lib/selectionLogic.test.js"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py: build_xmp() has a convoluted ternary on line 352 mixing exposure format with a fallback that never triggers for keys other than 'exposure' — works but is hard to read; consider using _fmt_basic()/BASIC_ATTR_MAP consistently in the legacy path too.",
+    "PhotoBasic.basic is typed Dict[str, float] but real payloads pass Optional[None] via .get() in build_photo_xmp — fine, but Pydantic will coerce numeric strings which may hide client bugs; consider explicit typed fields.",
+    "server.py: single-file 852 lines — exceeds 700-line guideline; recommend splitting XMP generation, cloud jobs, and photographer-style modules.",
+    "download_cloud_job returns 409 when not completed, but polling clients still get 200 from GET /cloud-jobs/{id}; consider surfacing 'failed' state clearly in the download error message."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration7_per_photo_and_preset.py (new)"
+  ],
+  "success_rate": {"backend": "100% (36/36)", "frontend": "100% (9/9 jest)"},
+  "test_credentials": "Seeded via MongoDB per /app/memory/test_credentials.md (Bearer session token). Ephemeral per-test-session user, cleaned up on teardown.",
+  "seed_data_creation": "Test user + user_sessions inserted in test_database and cleaned up in module-scoped fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "New XMP payload shape: {photos:[{filename,basic:{...}}], creative_params:{}, preset_xmp?:str}. Legacy shape {filenames:[], parameters:{}} still supported. When preset_xmp is provided, only BASIC_ATTR_MAP keys (exposure/contrast/highlights/shadows/whites/blacks) are substituted; all other crs:* attrs from the preset are preserved verbatim by _set_crs_attr(). Cloud job persists photos + preset_xmp and generates the ZIP on download via xmp_entries(). Note: pytest.ini enables xdist by default; use `-p xdist -n 0` to run serially when needed. Full-browser upload flow (canvas metrics) is not headless-testable."
+}

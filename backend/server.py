@@ -82,9 +82,17 @@ class ProjectUpdate(BaseModel):
     rawai_state: Optional[Dict[str, Any]] = None
 
 
+class PhotoBasic(BaseModel):
+    filename: str
+    basic: Dict[str, float] = Field(default_factory=dict)
+
+
 class XmpRequest(BaseModel):
-    filenames: List[str]
-    parameters: Dict[str, float] = Field(default_factory=dict)
+    photos: List[PhotoBasic] = Field(default_factory=list)   # NUEVO: corrección básica por foto
+    creative_params: Dict[str, float] = Field(default_factory=dict)  # capa creativa (sliders/estilo)
+    preset_xmp: Optional[str] = None                         # preset Lightroom completo (texto .xmp)
+    filenames: List[str] = Field(default_factory=list)       # compatibilidad
+    parameters: Dict[str, float] = Field(default_factory=dict)  # compatibilidad
     camera_profile: Optional[str] = "Adobe Standard"
     precision_mode: Optional[str] = "balanced"
     preset_name: Optional[str] = None
@@ -115,10 +123,14 @@ class CloudJob(BaseModel):
     total: int = 0
     processed: int = 0
     filenames: List[str] = Field(default_factory=list)
+    photos: List[Dict[str, Any]] = Field(default_factory=list)
     parameters: Dict[str, float] = Field(default_factory=dict)
+    creative_params: Dict[str, float] = Field(default_factory=dict)
+    preset_xmp: Optional[str] = None
     camera_profile: Optional[str] = "Adobe Standard"
     precision_mode: Optional[str] = "balanced"
     preset_name: Optional[str] = None
+    error_message: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -356,12 +368,80 @@ def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, proc
 '''
 
 
-def build_zip(project_name, filenames, parameters, camera_profile, precision_mode, preset_name):
+BASIC_ATTR_MAP = {
+    "exposure": "Exposure2012",
+    "contrast": "Contrast2012",
+    "highlights": "Highlights2012",
+    "shadows": "Shadows2012",
+    "whites": "Whites2012",
+    "blacks": "Blacks2012",
+}
+
+
+def _fmt_basic(key, value):
+    if key == "exposure":
+        return f"{float(value):+.2f}"
+    return str(int(round(float(value))))
+
+
+def _set_crs_attr(xmp, attr, value):
+    pat = re.compile(r'(crs:' + attr + r'=")([+-]?[0-9]*\.?[0-9]+)(")')
+    if pat.search(xmp):
+        return pat.sub(lambda m: m.group(1) + value + m.group(3), xmp, count=1)
+    # también forma de elemento <crs:Attr>val</crs:Attr>
+    epat = re.compile(r'(<crs:' + attr + r'>)([+-]?[0-9]*\.?[0-9]+)(</crs:' + attr + r'>)')
+    if epat.search(xmp):
+        return epat.sub(lambda m: m.group(1) + value + m.group(3), xmp, count=1)
+    idx = xmp.find("<rdf:Description")
+    if idx == -1:
+        return xmp
+    end = xmp.find(">", idx)
+    if end == -1:
+        return xmp
+    insert_at = end - 1 if xmp[end - 1] == "/" else end
+    return xmp[:insert_at] + f'\n   crs:{attr}="{value}"' + xmp[insert_at:]
+
+
+def build_photo_xmp(filename, basic, creative_params, preset_xmp, camera_profile, precision):
+    # Si hay un preset Lightroom completo: se conserva TODO su look (curvas, HSL, textura…)
+    # y solo se SUSTITUYEN los básicos de luz por la corrección automática por foto de la IA.
+    if preset_xmp:
+        xmp = preset_xmp
+        for key, attr in BASIC_ATTR_MAP.items():
+            if basic and key in basic and basic[key] is not None:
+                xmp = _set_crs_attr(xmp, attr, _fmt_basic(key, basic[key]))
+        return xmp
+    # Sin preset: básicos por foto + capa creativa (sliders/estilo).
+    params = {}
+    params.update(basic or {})
+    params.update(creative_params or {})
+    return build_xmp(filename, params, camera_profile or "Adobe Standard", precision or "balanced")
+
+
+def xmp_entries(req_or_job, camera_profile, precision):
+    photos = req_or_job.get("photos") or []
+    creative = req_or_job.get("creative_params") or {}
+    preset_xmp = req_or_job.get("preset_xmp")
+    entries = []
+    if photos:
+        for p in photos:
+            fn = p["filename"]
+            base = fn.rsplit(".", 1)[0]
+            entries.append((f"{base}.xmp", build_photo_xmp(fn, p.get("basic") or {}, creative, preset_xmp, camera_profile, precision)))
+    else:
+        # compatibilidad: mismos parámetros para todas
+        params = req_or_job.get("parameters") or {}
+        for fn in (req_or_job.get("filenames") or []):
+            base = fn.rsplit(".", 1)[0]
+            entries.append((f"{base}.xmp", build_xmp(fn, params, camera_profile or "Adobe Standard", precision or "balanced")))
+    return entries
+
+
+def build_zip_from_entries(entries):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fname in filenames:
-            base = fname.rsplit(".", 1)[0]
-            zf.writestr(f"{base}.xmp", build_xmp(fname, parameters, camera_profile or "Adobe Standard", precision_mode or "balanced"))
+        for name, content in entries:
+            zf.writestr(name, content)
     buf.seek(0)
     return buf
 
@@ -371,16 +451,16 @@ async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(ge
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    if not req.filenames:
+    data = req.model_dump()
+    entries = xmp_entries(data, req.camera_profile, req.precision_mode)
+    if not entries:
         raise HTTPException(status_code=400, detail="No hay archivos en la cola")
 
-    buf = build_zip(doc.get("name"), req.filenames, req.parameters, req.camera_profile, req.precision_mode, req.preset_name)
-
+    buf = build_zip_from_entries(entries)
     await db.projects.update_one({"id": project_id}, {"$set": {
-        "status": "completed", "processed_images": len(req.filenames),
+        "status": "completed", "processed_images": len(entries),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }})
-
     safe = (doc.get("name") or "proyecto").replace(" ", "_")
     return StreamingResponse(buf, media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'})
@@ -438,11 +518,14 @@ async def create_cloud_job(project_id: str, req: XmpRequest, user: User = Depend
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    if not req.filenames:
+    total = len(req.photos) or len(req.filenames)
+    if total == 0:
         raise HTTPException(status_code=400, detail="No hay archivos en la cola")
-    job = CloudJob(user_id=user.user_id, project_id=project_id, total=len(req.filenames),
-                   filenames=req.filenames, parameters=req.parameters, camera_profile=req.camera_profile,
-                   precision_mode=req.precision_mode, preset_name=req.preset_name)
+    job = CloudJob(user_id=user.user_id, project_id=project_id, total=total,
+                   filenames=[p.filename for p in req.photos] or req.filenames,
+                   photos=[p.model_dump() for p in req.photos],
+                   parameters=req.parameters, creative_params=req.creative_params, preset_xmp=req.preset_xmp,
+                   camera_profile=req.camera_profile, precision_mode=req.precision_mode, preset_name=req.preset_name)
     await db.cloud_jobs.insert_one(job.model_dump())
     await db.projects.update_one({"id": project_id}, {"$set": {
         "status": "processing", "rawai_state.cloudJobId": job.id,
@@ -468,7 +551,8 @@ async def download_cloud_job(job_id: str, user: User = Depends(get_current_user)
         raise HTTPException(status_code=409, detail="El trabajo aún no ha terminado")
     project = await db.projects.find_one({"id": job["project_id"]}, {"_id": 0})
     pname = project.get("name") if project else "proyecto"
-    buf = build_zip(pname, job["filenames"], job["parameters"], job["camera_profile"], job["precision_mode"], job.get("preset_name"))
+    entries = xmp_entries(job, job.get("camera_profile"), job.get("precision_mode"))
+    buf = build_zip_from_entries(entries)
     safe = (pname or "proyecto").replace(" ", "_")
     return StreamingResponse(buf, media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'})

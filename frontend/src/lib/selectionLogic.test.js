@@ -1,4 +1,4 @@
-import { groupAndSelect, hamming } from "./selectionLogic";
+import { groupAndSelect, hamming, autoBasicFromMetrics } from "./selectionLogic";
 
 const M = (sharpness, exposure, hash) => ({ sharpness, exposure, hash });
 
@@ -57,4 +57,24 @@ test("sin métricas (extracción fallida) no se descarta la foto", () => {
   ];
   const r = groupAndSelect(items);
   expect(r.every((x) => x.selectedForEdit)).toBe(true);
+});
+
+test("corrección básica es POR FOTO (foto oscura sube exposición, clara la baja)", () => {
+  const dark = autoBasicFromMetrics({ luma: 60, shadowClip: 0.01, highClip: 0 });
+  const bright = autoBasicFromMetrics({ luma: 190, shadowClip: 0, highClip: 0.01 });
+  expect(dark.exposure).toBeGreaterThan(0);   // subexpuesta -> +EV
+  expect(bright.exposure).toBeLessThan(0);    // sobreexpuesta -> -EV
+  expect(dark.exposure).not.toBe(bright.exposure); // cada foto distinta
+});
+
+test("recorte de altas luces baja blancos y comprime altas luces", () => {
+  const clipped = autoBasicFromMetrics({ luma: 150, shadowClip: 0, highClip: 0.1 });
+  expect(clipped.whites).toBeLessThanOrEqual(0);
+  expect(clipped.highlights).toBeLessThan(-15);
+});
+
+test("dos fotos con luma distinta dan exposición distinta", () => {
+  const a = autoBasicFromMetrics({ luma: 90 });
+  const b = autoBasicFromMetrics({ luma: 140 });
+  expect(a.exposure).not.toBe(b.exposure);
 });
