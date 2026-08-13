@@ -23,7 +23,17 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Frontend: Login, Dashboard (crear/abrir/eliminar proyectos), Studio stepper de 6 pasos:
   Carpeta RAW -> Selección IA (burst grouping + best-shot) -> Revisión -> Perfil cámara -> Presets/params IA -> Procesamiento -> Reporte + descarga ZIP.
 - Heurística de selección: agrupa por proximidad temporal (lastModified), scoring determinista, marca mejor toma de cada ráfaga.
-- Testing: backend 9/9 pytest OK (auth, CRUD scoping, XMP ZIP content). Rutas protegidas verificadas.
+
+### Iteración 2 (2026-08-13)
+- Miniaturas reales: extracción del JPEG embebido en el RAW (lib/rawThumb.js) con carga perezosa (IntersectionObserver) en Revisión.
+- Perfiles de estilo propios: subir .xmp (parseo crs -> config) y guardar/cargar/eliminar perfiles reutilizables (/api/style-profiles).
+- Procesamiento en la nube: /api/projects/{id}/cloud-jobs (cola asíncrona queued->processing->completed), página /processing con polling + descarga ZIP.
+- Reanudar selección por nombre de archivo al reabrir proyecto tras re-elegir carpeta.
+
+### Iteración 3 (2026-08-13)
+- KR Auto Nivelado (herramienta principal, 100% cliente con JSZip): nivelado técnico fijo de sidecars XMP (Exposición +0.10, Luces −15, Sombras +15, Blancos +5, Negros −5), preserva nombres y el resto del archivo. lib/xmp/krAutoLevel.js + componente KrAutoNivelado.jsx con vista previa y ZIP descargable.
+- Estilos desde galería (PhotographerStyleProfile): analiza la URL pública de otro fotógrafo con visión (GPT-5.4 vía Universal Key), scraping HTML + 12 imágenes, devuelve color_profile + edit_profile + descripción + confianza. /api/photographer-styles CRUD + análisis en background. Seleccionable como estilo de referencia en Presets.
+- Testing: backend 22/22 pytest OK (auth, scoping cross-user, cloud jobs, XMP, photographer styles happy/fail path).
 
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).

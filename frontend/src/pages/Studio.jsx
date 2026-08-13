@@ -8,12 +8,14 @@ import SelectionStep from "@/components/studio/SelectionStep";
 import ReviewStep from "@/components/studio/ReviewStep";
 import CameraProfileStep from "@/components/studio/CameraProfileStep";
 import PresetParamsStep from "@/components/studio/PresetParamsStep";
+import ProcessingModeChoice from "@/components/studio/ProcessingModeChoice";
 import ProcessingStep from "@/components/studio/ProcessingStep";
 import ReportStep from "@/components/studio/ReportStep";
 import { parametersFromConfig } from "@/lib/paramDefs";
+import { analyzeFolder } from "@/lib/rawSelection";
 import api from "@/lib/api";
 
-const STEP_INDEX = { folder: 0, selection: 1, review: 2, profile: 3, presets: 4, processing: 5, report: 5 };
+const STEP_INDEX = { folder: 0, selection: 1, review: 2, profile: 3, presets: 4, mode: 5, processing: 5, report: 5 };
 
 export default function Studio() {
   const [params] = useSearchParams();
@@ -31,20 +33,26 @@ export default function Studio() {
 
   useEffect(() => {
     if (!projectId) { navigate("/dashboard"); return; }
-    api.get(`/projects/${projectId}`).then((r) => setProject(r.data)).catch(() => navigate("/dashboard"));
+    api.get(`/projects/${projectId}`).then((r) => {
+      // Si ya hay un trabajo en la nube en curso o terminado, el estado oficial vive en Procesamiento.
+      if (r.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}`); return; }
+      setProject(r.data);
+    }).catch(() => navigate("/dashboard"));
   }, [projectId, navigate]);
 
   const persist = async (patch) => {
     try { await api.patch(`/projects/${projectId}/state`, patch); } catch { /* noop */ }
   };
 
-  const xmpPayload = useMemo(() => presetInfo && ({
+  const buildPayload = () => ({
     filenames: sendPhotos.map((p) => p.name),
     parameters: parametersFromConfig(presetInfo.config),
     camera_profile: profileChoice.profile,
     precision_mode: presetInfo.precisionMode,
     preset_name: presetInfo.presetName,
-  }), [sendPhotos, presetInfo, profileChoice]);
+  });
+
+  const xmpPayload = useMemo(() => presetInfo && buildPayload(), [sendPhotos, presetInfo, profileChoice]); // eslint-disable-line
 
   if (!project) {
     return <AppShell><p className="text-sm text-zinc-500" data-testid="studio-loading">Cargando proyecto…</p></AppShell>;
@@ -67,14 +75,28 @@ export default function Studio() {
             setFiles(f);
             await api.put(`/projects/${projectId}`, { raw_folder_path: folderName, total_images: f.length, status: "processing" });
             setProject((p) => ({ ...p, raw_folder_path: folderName, total_images: f.length }));
-            setStep("selection");
+            // Reanudar selección: si el proyecto ya tenía una selección guardada por nombre de archivo,
+            // la restauramos sobre la carpeta recién elegida en lugar de volver a analizar con IA.
+            const st = project.rawai_state || {};
+            const saved = (st.editQueueFilenames?.length ? st.editQueueFilenames : st.selectionFilenames) || [];
+            if (saved.length) {
+              const set = new Set(saved);
+              const all = analyzeFolder(f);
+              all.forEach((p) => { p.selectedForEdit = set.has(p.name); });
+              setPhotos(all);
+              setSendPhotos(all.filter((p) => p.selectedForEdit));
+              toast.success("Selección restaurada", { description: `${set.size} fotos recuperadas del proyecto` });
+              setStep("review");
+            } else {
+              setStep("selection");
+            }
           }} />
         )}
 
         {step === "selection" && (
           <SelectionStep files={files} onContinue={async (p) => {
             setPhotos(p);
-            await persist({ selectionCompleted: true, totalPhotos: p.length });
+            await persist({ selectionCompleted: true, totalPhotos: p.length, selectionFilenames: p.filter((x) => x.selectedForEdit).map((x) => x.name) });
             setStep("review");
           }} />
         )}
@@ -101,8 +123,20 @@ export default function Studio() {
           <PresetParamsStep count={sendPhotos.length} onContinue={async (info) => {
             setPresetInfo(info);
             await persist({ presetName: info.presetName, precisionMode: info.precisionMode, presetCompleted: true });
-            setStep("processing");
+            setStep("mode");
           }} />
+        )}
+
+        {step === "mode" && (
+          <ProcessingModeChoice count={sendPhotos.length}
+            onLocal={() => setStep("processing")}
+            onCloud={async () => {
+              try {
+                await api.post(`/projects/${projectId}/cloud-jobs`, buildPayload());
+                toast.success("Trabajo enviado a la nube");
+                navigate(`/processing?project=${projectId}`);
+              } catch { toast.error("No se pudo crear el trabajo en la nube"); }
+            }} />
         )}
 
         {step === "processing" && (

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="3" failures="1" skipped="0" tests="6" time="3.663" timestamp="2026-08-13T12:29:32.430576+00:00" hostname="agent-env-09cc0c18-1531-4cef-9efe-1587bfd11dab"><testcase classname="tests.test_iteration2.TestStyleProfiles" name="test_create_list_delete_and_cross_user_scoping" time="0.804" /><testcase classname="tests.test_iteration2.TestCloudJobs" name="test_create_poll_download_lifecycle" time="2.408"><failure message="assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code">backend/tests/test_iteration2.py:172: in test_create_poll_download_lifecycle
+    assert r.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</failure></testcase><testcase classname="tests.test_iteration2.TestStyleProfiles" name="test_requires_auth" time="0.222" /><testcase classname="tests.test_iteration2.TestCloudJobs" name="test_empty_filenames_returns_400" time="0.202"><error message="failed on setup with &quot;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_iteration2.py:132: in project
+    assert r.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_iteration2.TestCloudJobs" name="test_cross_user_access_404" time="0.170"><error message="failed on setup with &quot;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_iteration2.py:132: in project
+    assert r.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase><testcase classname="tests.test_iteration2.TestCloudJobs" name="test_cloud_job_requires_auth" time="0.171"><error message="failed on setup with &quot;assert 401 == 200&#10; +  where 401 = &lt;Response [401]&gt;.status_code&quot;">backend/tests/test_iteration2.py:132: in project
+    assert r.status_code == 200
+E   assert 401 == 200
+E    +  where 401 = &lt;Response [401]&gt;.status_code</error></testcase></testsuite></testsuites>

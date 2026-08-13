@@ -5,10 +5,14 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import io
+import re
+import base64
+import asyncio
 import zipfile
 import logging
 import uuid
 import requests
+from urllib.parse import urljoin
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -25,6 +29,16 @@ app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+
+# Strong references to background tasks so they are not garbage-collected mid-run.
+_bg_tasks = set()
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+    return task
 
 
 # ----------------------------- Models -----------------------------
@@ -73,6 +87,60 @@ class XmpRequest(BaseModel):
     camera_profile: Optional[str] = "Adobe Standard"
     precision_mode: Optional[str] = "balanced"
     preset_name: Optional[str] = None
+
+
+class StyleProfile(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str
+    parameters: Dict[str, float] = Field(default_factory=dict)
+    camera_profile: Optional[str] = "Adobe Standard"
+    precision_mode: Optional[str] = "balanced"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class StyleProfileCreate(BaseModel):
+    name: str
+    parameters: Dict[str, float] = Field(default_factory=dict)
+    camera_profile: Optional[str] = "Adobe Standard"
+    precision_mode: Optional[str] = "balanced"
+
+
+class CloudJob(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    project_id: str
+    status: str = "queued"  # queued | processing | completed | failed
+    total: int = 0
+    processed: int = 0
+    filenames: List[str] = Field(default_factory=list)
+    parameters: Dict[str, float] = Field(default_factory=dict)
+    camera_profile: Optional[str] = "Adobe Standard"
+    precision_mode: Optional[str] = "balanced"
+    preset_name: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class PhotographerStyleProfile(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str
+    gallery_url: str
+    representative_image: Optional[str] = None
+    images_analyzed: int = 0
+    confidence: Optional[float] = None
+    description: Optional[str] = None
+    color_profile: Optional[Dict[str, Any]] = None
+    edit_profile: Optional[Dict[str, Any]] = None
+    status: str = "analyzing"  # analyzing | ready | failed
+    error_message: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class PhotographerStyleCreate(BaseModel):
+    name: str
+    gallery_url: str
 
 
 # ----------------------------- Auth helpers -----------------------------
@@ -275,6 +343,22 @@ def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, proc
 '''
 
 
+def build_zip(project_name, filenames, parameters, camera_profile, precision_mode, preset_name):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname in filenames:
+            base = fname.rsplit(".", 1)[0]
+            zf.writestr(f"{base}.xmp", build_xmp(fname, parameters, camera_profile or "Adobe Standard", precision_mode or "balanced"))
+        readme = (f"RAW AI Studio — Paquete XMP\nProyecto: {project_name}\n"
+                  f"Perfil de cámara: {camera_profile}\nModo de precisión: {precision_mode}\n"
+                  f"Preset: {preset_name or 'Personalizado'}\nArchivos XMP: {len(filenames)}\n\n"
+                  "Coloca cada archivo .xmp junto a su RAW correspondiente en Lightroom / Camera Raw.\n"
+                  "Los archivos RAW originales NO se modifican.\n")
+        zf.writestr("LEEME.txt", readme)
+    buf.seek(0)
+    return buf
+
+
 @api_router.post("/projects/{project_id}/generate-xmp")
 async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(get_current_user)):
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
@@ -283,19 +367,7 @@ async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(ge
     if not req.filenames:
         raise HTTPException(status_code=400, detail="No hay archivos en la cola")
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for fname in req.filenames:
-            base = fname.rsplit(".", 1)[0]
-            xmp_content = build_xmp(fname, req.parameters, req.camera_profile or "Adobe Standard", req.precision_mode or "balanced")
-            zf.writestr(f"{base}.xmp", xmp_content)
-        readme = (f"RAW AI Studio — Paquete XMP\nProyecto: {doc.get('name')}\n"
-                  f"Perfil de cámara: {req.camera_profile}\nModo de precisión: {req.precision_mode}\n"
-                  f"Preset: {req.preset_name or 'Personalizado'}\nArchivos XMP: {len(req.filenames)}\n\n"
-                  "Coloca cada archivo .xmp junto a su RAW correspondiente en Lightroom / Camera Raw.\n"
-                  "Los archivos RAW originales NO se modifican.\n")
-        zf.writestr("LEEME.txt", readme)
-    buf.seek(0)
+    buf = build_zip(doc.get("name"), req.filenames, req.parameters, req.camera_profile, req.precision_mode, req.preset_name)
 
     await db.projects.update_one({"id": project_id}, {"$set": {
         "status": "completed", "processed_images": len(req.filenames),
@@ -303,11 +375,264 @@ async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(ge
     }})
 
     safe = (doc.get("name") or "proyecto").replace(" ", "_")
-    return StreamingResponse(
-        io.BytesIO(buf.read()),
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'},
-    )
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'})
+
+
+# ----------------------------- Style Profiles -----------------------------
+@api_router.get("/style-profiles", response_model=List[StyleProfile])
+async def list_style_profiles(user: User = Depends(get_current_user)):
+    docs = await db.style_profiles.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [StyleProfile(**d) for d in docs]
+
+
+@api_router.post("/style-profiles", response_model=StyleProfile)
+async def create_style_profile(payload: StyleProfileCreate, user: User = Depends(get_current_user)):
+    profile = StyleProfile(user_id=user.user_id, **payload.model_dump())
+    await db.style_profiles.insert_one(profile.model_dump())
+    return profile
+
+
+@api_router.delete("/style-profiles/{profile_id}")
+async def delete_style_profile(profile_id: str, user: User = Depends(get_current_user)):
+    res = await db.style_profiles.delete_one({"id": profile_id, "user_id": user.user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    return {"ok": True}
+
+
+# ----------------------------- Cloud Jobs -----------------------------
+async def run_cloud_job(job_id: str):
+    try:
+        job = await db.cloud_jobs.find_one({"id": job_id}, {"_id": 0})
+        if not job:
+            return
+        total = job.get("total", 0)
+        await db.cloud_jobs.update_one({"id": job_id}, {"$set": {"status": "processing"}})
+        processed = 0
+        step = max(1, total // 20)
+        while processed < total:
+            await asyncio.sleep(0.6)
+            processed = min(total, processed + step)
+            await db.cloud_jobs.update_one({"id": job_id}, {"$set": {
+                "processed": processed, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        await db.cloud_jobs.update_one({"id": job_id}, {"$set": {
+            "status": "completed", "processed": total, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        await db.projects.update_one({"id": job["project_id"]}, {"$set": {
+            "status": "completed", "processed_images": total, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    except Exception as exc:
+        logging.exception("run_cloud_job failed")
+        await db.cloud_jobs.update_one({"id": job_id}, {"$set": {
+            "status": "failed", "error_message": str(exc), "updated_at": datetime.now(timezone.utc).isoformat()}})
+
+
+@api_router.post("/projects/{project_id}/cloud-jobs", response_model=CloudJob)
+async def create_cloud_job(project_id: str, req: XmpRequest, user: User = Depends(get_current_user)):
+    doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    if not req.filenames:
+        raise HTTPException(status_code=400, detail="No hay archivos en la cola")
+    job = CloudJob(user_id=user.user_id, project_id=project_id, total=len(req.filenames),
+                   filenames=req.filenames, parameters=req.parameters, camera_profile=req.camera_profile,
+                   precision_mode=req.precision_mode, preset_name=req.preset_name)
+    await db.cloud_jobs.insert_one(job.model_dump())
+    await db.projects.update_one({"id": project_id}, {"$set": {
+        "status": "processing", "rawai_state.cloudJobId": job.id,
+        "updated_at": datetime.now(timezone.utc).isoformat()}})
+    _spawn(run_cloud_job(job.id))
+    return job
+
+
+@api_router.get("/cloud-jobs/{job_id}", response_model=CloudJob)
+async def get_cloud_job(job_id: str, user: User = Depends(get_current_user)):
+    doc = await db.cloud_jobs.find_one({"id": job_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+    return CloudJob(**doc)
+
+
+@api_router.get("/cloud-jobs/{job_id}/download")
+async def download_cloud_job(job_id: str, user: User = Depends(get_current_user)):
+    job = await db.cloud_jobs.find_one({"id": job_id, "user_id": user.user_id}, {"_id": 0})
+    if not job:
+        raise HTTPException(status_code=404, detail="Trabajo no encontrado")
+    if job["status"] != "completed":
+        raise HTTPException(status_code=409, detail="El trabajo aún no ha terminado")
+    project = await db.projects.find_one({"id": job["project_id"]}, {"_id": 0})
+    pname = project.get("name") if project else "proyecto"
+    buf = build_zip(pname, job["filenames"], job["parameters"], job["camera_profile"], job["precision_mode"], job.get("preset_name"))
+    safe = (pname or "proyecto").replace(" ", "_")
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'})
+
+
+# ----------------------------- Photographer Style Profiles -----------------------------
+IMG_EXT_RE = re.compile(r"\.(jpe?g|png|webp)(\?|$)", re.I)
+
+
+def scrape_gallery_images(url, limit=12):
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; RAWAIStudio/1.0)"}
+    r = requests.get(url, headers=headers, timeout=20)
+    r.raise_for_status()
+    html = r.text
+    candidates = []
+    for m in re.finditer(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, re.I):
+        candidates.append(m.group(1))
+    for m in re.finditer(r"<img\b[^>]*>", html, re.I):
+        tag = m.group(0)
+        for attr in ("data-src", "data-original", "data-lazy", "src"):
+            am = re.search(attr + r'=["\']([^"\']+)["\']', tag, re.I)
+            if am:
+                candidates.append(am.group(1))
+                break
+    for m in re.finditer(r'srcset=["\']([^"\']+)["\']', html, re.I):
+        first = m.group(1).split(",")[0].strip().split(" ")[0]
+        if first:
+            candidates.append(first)
+
+    seen, urls = set(), []
+    for u in candidates:
+        if not u or u.startswith("data:") or u.lower().endswith(".svg"):
+            continue
+        full = urljoin(url, u)
+        if full in seen:
+            continue
+        seen.add(full)
+        urls.append(full)
+    return urls
+
+
+def download_images_b64(urls, limit=12):
+    out = []
+    for u in urls:
+        if len(out) >= limit:
+            break
+        try:
+            resp = requests.get(u, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            ctype = resp.headers.get("content-type", "")
+            if not ctype.startswith("image/") or "svg" in ctype or "gif" in ctype:
+                continue
+            if len(resp.content) < 3000 or len(resp.content) > 6 * 1024 * 1024:
+                continue
+            out.append((u, base64.b64encode(resp.content).decode("ascii")))
+        except Exception:
+            continue
+    return out
+
+
+STYLE_SYSTEM = (
+    "Eres un director de fotografía y colorista experto en analizar el estilo visual de fotógrafos "
+    "de boda. Analizas el COLOR (balance de blancos, contraste, saturación, tono de piel, rango tonal) "
+    "y la EDICIÓN (recorte/composición, tratamiento de luces y sombras, nitidez percibida, consistencia) "
+    "por separado. Respondes SIEMPRE en español y SOLO con un objeto JSON válido, sin texto adicional."
+)
+
+STYLE_PROMPT = (
+    "Analiza el estilo fotográfico común de estas {n} imágenes de la galería de un mismo fotógrafo. "
+    "Devuelve EXCLUSIVAMENTE este JSON (sin markdown):\n"
+    "{{\n"
+    '  "description": "descripción del estilo en 2-3 frases",\n'
+    '  "confidence": 0-100,\n'
+    '  "color_profile": {{\n'
+    '    "white_balance_tendency": "texto",\n'
+    '    "contrast": "low|medium|high",\n'
+    '    "saturation": "muted|natural|vivid",\n'
+    '    "skin_tone": "warm|natural|cool",\n'
+    '    "tonal_range": "texto",\n'
+    '    "summary": "resumen del color"\n'
+    "  }},\n"
+    '  "edit_profile": {{\n'
+    '    "crop_style": "texto",\n'
+    '    "light_shadow_treatment": "texto",\n'
+    '    "sharpening_look": "texto",\n'
+    '    "consistency": "low|medium|high",\n'
+    '    "summary": "resumen de la edición"\n'
+    "  }}\n"
+    "}}"
+)
+
+
+def parse_json_block(text):
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("Respuesta sin JSON")
+    import json
+    return json.loads(text[start:end + 1])
+
+
+async def analyze_photographer_style(profile_id):
+    try:
+        prof = await db.photographer_styles.find_one({"id": profile_id}, {"_id": 0})
+        if not prof:
+            return
+        urls = await asyncio.to_thread(scrape_gallery_images, prof["gallery_url"], 30)
+        if not urls:
+            raise ValueError("No se encontraron imágenes en la galería (puede requerir JavaScript).")
+        rep = urls[0]
+        await db.photographer_styles.update_one({"id": profile_id}, {"$set": {"representative_image": rep}})
+        images = await asyncio.to_thread(download_images_b64, urls, 12)
+        if not images:
+            raise ValueError("No se pudieron descargar imágenes válidas de la galería.")
+
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+        chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"style-{profile_id}", system_message=STYLE_SYSTEM).with_model("openai", "gpt-5.4")
+        msg = UserMessage(
+            text=STYLE_PROMPT.format(n=len(images)),
+            file_contents=[ImageContent(image_base64=b64) for _, b64 in images],
+        )
+        reply = await chat.send_message(msg)
+        data = parse_json_block(reply if isinstance(reply, str) else str(reply))
+
+        conf = data.get("confidence")
+        try:
+            conf = float(conf)
+        except (TypeError, ValueError):
+            conf = None
+        await db.photographer_styles.update_one({"id": profile_id}, {"$set": {
+            "status": "ready",
+            "description": data.get("description"),
+            "confidence": conf,
+            "color_profile": data.get("color_profile"),
+            "edit_profile": data.get("edit_profile"),
+            "images_analyzed": len(images),
+            "representative_image": rep,
+        }})
+    except Exception as exc:
+        logging.exception("analyze_photographer_style failed")
+        await db.photographer_styles.update_one({"id": profile_id}, {"$set": {
+            "status": "failed", "error_message": str(exc)}})
+
+
+@api_router.get("/photographer-styles", response_model=List[PhotographerStyleProfile])
+async def list_photographer_styles(user: User = Depends(get_current_user)):
+    docs = await db.photographer_styles.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [PhotographerStyleProfile(**d) for d in docs]
+
+
+@api_router.post("/photographer-styles", response_model=PhotographerStyleProfile)
+async def create_photographer_style(payload: PhotographerStyleCreate, user: User = Depends(get_current_user)):
+    profile = PhotographerStyleProfile(user_id=user.user_id, name=payload.name, gallery_url=payload.gallery_url)
+    await db.photographer_styles.insert_one(profile.model_dump())
+    _spawn(analyze_photographer_style(profile.id))
+    return profile
+
+
+@api_router.get("/photographer-styles/{profile_id}", response_model=PhotographerStyleProfile)
+async def get_photographer_style(profile_id: str, user: User = Depends(get_current_user)):
+    doc = await db.photographer_styles.find_one({"id": profile_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    return PhotographerStyleProfile(**doc)
+
+
+@api_router.delete("/photographer-styles/{profile_id}")
+async def delete_photographer_style(profile_id: str, user: User = Depends(get_current_user)):
+    res = await db.photographer_styles.delete_one({"id": profile_id, "user_id": user.user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    return {"ok": True}
 
 
 @api_router.get("/")

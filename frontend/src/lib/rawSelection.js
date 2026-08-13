@@ -50,6 +50,7 @@ export function analyzeFolder(fileList) {
       burstId,
       score: qualityScore(f),
       thumb: SAMPLE_THUMBS[i % SAMPLE_THUMBS.length],
+      file: f,
       isBest: false,
       selectedForEdit: false,
     };

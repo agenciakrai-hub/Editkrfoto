@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 2 validation: Style Profiles CRUD + cross-user scoping, Cloud Jobs full lifecycle (queued→processing→completed with polling, download 409 before completion, ZIP contents, cross-user 404, empty filenames 400, auth required), and frontend ProcessingPage e2e (session cookie login → /processing?project=ID → cloud-job-panel + cloud-progress render → cloud-download-btn triggers real ZIP download containing one .xmp per filename + LEEME.txt → back-dashboard-btn returns to /dashboard). All 15 backend pytest tests pass (9 iteration-1 regression + 6 iteration-2). Dashboard regression also verified reachable with session cookie.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_raw_ai_studio.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/pytest_results.xml",
+    "/app/test_reports/pytest/iteration2_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py run_cloud_job: no try/except around DB updates — if the asyncio task raises (network blip, Mongo timeout), the job stays stuck in 'processing' forever with no failure marker. Wrap the loop and mark status='failed' on exception; also expose the error via GET /cloud-jobs/{id}.",
+    "server.py create_cloud_job uses asyncio.create_task without keeping a strong reference — Python may GC the task mid-run (see https://docs.python.org/3/library/asyncio-task.html#asyncio.create_task 'save a reference to the result'). Store tasks in a module-level set and discard on done_callback.",
+    "server.py PATCH /projects/{id}/state performs an in-Python read-modify-write on rawai_state — not atomic; concurrent PATCHes can lose writes. Use $set with dot-notation keys, or a $mergeObjects aggregation update.",
+    "server.py CloudJob download builds ZIP entirely in memory (build_zip returns BytesIO) — fine for MVP (a few hundred XMPs), but for large weddings (2000+ RAWs @ ~2KB each ≈ 4MB) still ok; just noting no streaming.",
+    "server.py build_xmp exposure formatting inconsistency persists from iteration 1 (exposure uses '+.2f', all others int(round)). Consider a unified formatter dict.",
+    "ProcessingPage.jsx swallows API errors with bare `catch { navigate('/dashboard') }` — a real backend outage silently redirects the user with no toast. Show a toast on failure so the user knows why.",
+    "ProcessingPage.jsx polling has no max-attempts / no exponential backoff — a stuck job polls forever every 1.5s. Add a timeout / 'failed' state handling once run_cloud_job supports failure.",
+    "CORS_ORIGINS still '*' with allow_credentials=True — iteration-1 finding still open."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration2.py (new)"
+  ],
+  "success_rate": { "backend": "100% (15/15)", "frontend": "100% (ProcessingPage flow + dashboard regression)" },
+  "test_credentials": "Session-based Emergent Google Auth. Two ephemeral test users seeded per-run in test_database.users + test_database.user_sessions (fixtures auto-cleanup). Third UI user seeded manually + cleaned up after run.",
+  "seed_data_creation": "For UI test: seeded 1 user, 1 session, 1 project (rawai_state.cloudJobId set), 1 completed cloud_job with 3 filenames in test_database — all cleaned up after run. Pytest fixtures self-clean.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend regression: `pytest /app/backend/tests/` (uses REACT_APP_BACKEND_URL, seeds+cleans users). Iteration 2 coverage in test_iteration2.py. For UI: seed a project with rawai_state.cloudJobId + a completed cloud_jobs doc, set session_token cookie, navigate to /processing?project=ID — data-testids used: cloud-job-panel, cloud-progress, cloud-download-btn, back-dashboard-btn. Studio inner steps (SelectionStep, ReviewStep thumbnails, PresetParamsStep xmp upload, ProcessingModeChoice mode-local-btn/mode-cloud-btn) still require webkitdirectory folder selection which Playwright cannot populate headlessly — environment limitation, not a bug. If needed, seed rawai_state.selectedFiles + reviewed frames directly to exercise later steps.",
+  "rca of the issue": "N/A — no bugs found in the requested iteration-2 scope."
+}

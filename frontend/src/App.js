@@ -7,6 +7,7 @@ import AuthCallback from "@/pages/AuthCallback";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
 import Studio from "@/pages/Studio";
+import ProcessingPage from "@/pages/ProcessingPage";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -30,6 +31,7 @@ function AppRouter() {
       <Route path="/" element={<Login />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
+      <Route path="/processing" element={<ProtectedRoute><ProcessingPage /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
