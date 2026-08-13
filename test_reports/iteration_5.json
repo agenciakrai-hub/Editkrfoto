@@ -1,0 +1,27 @@
+{
+  "summary": "Verified bug fix in POST /api/selection/analyze burst-grouping heuristic. 6 new tests + 24 regression tests all pass (30/30). Confirmed: (1) 1000 identical-timestamp CR2 files now select all 1000 (bug reported ~90 fixed, time_reliable=false, bursts=1000). (2) Realistic 1000 files with mixed rapid bursts + 3-6s gaps -> time_reliable=true, selected==bursts, no burst exceeds MAX_BURST=8, selected count substantial (>=200). (3) MAX_BURST cap: 100 files all in rapid <1500ms distinct-timestamp continuous run splits into ceil(100/8)=13 bursts -> 13 selected. (4) Determinism: identical input yields identical output (md5-based scores). (5) Auth: 401 without token, 400 on empty files. Regression suite (auth, projects CRUD, style-profiles, cloud-jobs, XMP, photographer-styles auth/scoping/failure, startup reaper) unaffected.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5_selection.py",
+    "/app/test_reports/pytest/iteration5_selection.xml",
+    "/app/test_reports/pytest/iteration5_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "compute_selection: sound heuristic; the unique_timestamps/total > 0.5 threshold correctly detects the SD-card copy scenario. Consider surfacing the ratio in the response for diagnostics.",
+    "_quality_score is deterministic via md5(name) — good for reproducibility; note that real 'quality' (sharpness/exposure) is not computed, only a placeholder ranking. This is acceptable given no pixel access on client-metadata payload, but frontend/UX should communicate that 'best' is heuristic-based.",
+    "SelectionRequest has no size cap; a malicious client could POST millions of entries. Consider a max-file limit (e.g., 20000) to prevent memory abuse.",
+    "server.py is ~770 lines — approaching the 700-line threshold; consider splitting into routers (auth, projects, xmp, cloud_jobs, photographer_styles, selection)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration5_selection.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "not tested (backend-only per request)" },
+  "test_credentials": "Seeded per /app/memory/test_credentials.md (Mongo test_database, Bearer session tokens).",
+  "seed_data_creation": "Ephemeral test user + user_session inserted then cleaned up in module fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Selection endpoint fully covered by test_iteration5_selection.py. Full regression command: `set -a && . backend/.env && set +a && pytest backend/tests/ -k 'not wikipedia and not happy'` yields 30/30 pass in ~13s. Excluded happy-path Wikipedia LLM test (paid).",
+  "rca_of_the_issue": "Original bug: burst-grouping used only lastModified gap < 1500ms. When users copy 1000 photos from an SD card, filesystem lastModified collapses to (near) identical values across all files, so gap=0 for every consecutive pair -> single mega-burst -> 1 selected. Existing implementation additionally caps bursts at MAX_BURST=8, which is what produced the reported ~90 (~1000/limits ≈ many bursts still but selected only best per burst). FIX in server.py compute_selection: compute unique_timestamps/n ratio; if <=0.5, mark time_reliable=false and force each file into its own singleton burst (start_new always true) so all files are selected. If reliable, burst-group with gap+MAX_BURST cap and keep best-of-each-burst. Verified reproduction and fix via test_1000_identical_timestamps_selects_all (asserts selected==1000)."
+}

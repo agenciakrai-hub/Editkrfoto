@@ -42,6 +42,11 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Reanudar nube: reaper en @startup marca como `failed` los cloud_jobs (queued/processing) y photographer_styles (analyzing) que quedaron colgados tras un reinicio.
 - Testing: backend 23/23 pytest OK (regresión + reaper + shape), sin bugs.
 
+### Fix (2026-08-13): selección solo 90 de 1000
+- Causa: al copiar 1000 fotos desde tarjeta/descarga, `lastModified` colapsa a valores casi idénticos → el agrupado por tiempo las encadenaba en pocas ráfagas gigantes → 1 seleccionada por ráfaga.
+- Solución: la selección IA se calcula ahora en el backend (POST /api/selection/analyze), testeable. Detecta si los timestamps son fiables (únicos/total > 0.5); si NO lo son, cada foto es su propia ráfaga y se selecciona todo; si lo son, agrupa ráfagas rápidas (<1500ms) con tope de 8 fotos y elige la mejor de cada una.
+- Verificado: 1000 timestamps idénticos → 1000 seleccionadas; 1000 realistas → 583. Testing 30/30 OK.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

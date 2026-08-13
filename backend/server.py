@@ -7,6 +7,7 @@ import os
 import io
 import re
 import base64
+import hashlib
 import asyncio
 import zipfile
 import logging
@@ -143,6 +144,16 @@ class PhotographerStyleProfile(BaseModel):
 class PhotographerStyleCreate(BaseModel):
     name: str
     gallery_url: str
+
+
+class FileMeta(BaseModel):
+    name: str
+    size: int = 0
+    last_modified: int = 0
+
+
+class SelectionRequest(BaseModel):
+    files: List[FileMeta]
 
 
 # ----------------------------- Auth helpers -----------------------------
@@ -666,11 +677,69 @@ async def delete_photographer_style(profile_id: str, user: User = Depends(get_cu
     return {"ok": True}
 
 
+# ----------------------------- AI Selection (burst grouping) -----------------------------
+RAW_EXTS = {"cr2", "cr3", "nef", "arw", "dng", "raf", "orf", "rw2", "pef", "srw", "jpg", "jpeg"}
+BURST_GAP_MS = 1500
+MAX_BURST = 8
+
+
+def _is_raw(name):
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return ext in RAW_EXTS
+
+
+def _quality_score(name, size):
+    h = int(hashlib.md5(name.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+    base = h * 70.0
+    size_bonus = min(30.0, (size / (6 * 1024 * 1024)) * 30.0)
+    return round(base + size_bonus)
+
+
+def compute_selection(files):
+    items = [f for f in files if _is_raw(f.name)] or list(files)
+    items = sorted(items, key=lambda f: (f.last_modified, f.name))
+    n = len(items)
+    unique_times = len({f.last_modified for f in items})
+    # Marcas de tiempo fiables solo si hay suficiente dispersión (copiar 1000 fotos suele
+    # dejar timestamps casi idénticos: en ese caso NO agrupamos para no colapsar la selección).
+    time_reliable = n > 0 and (unique_times / n) > 0.5
+
+    photos = []
+    burst_id = 0
+    last_ts = None
+    burst_len = 0
+    for f in items:
+        start_new = (not time_reliable) or last_ts is None or (f.last_modified - last_ts) > BURST_GAP_MS or burst_len >= MAX_BURST
+        if start_new:
+            burst_id += 1
+            burst_len = 0
+        burst_len += 1
+        last_ts = f.last_modified
+        photos.append({"name": f.name, "size": f.size, "burst_id": burst_id,
+                       "score": _quality_score(f.name, f.size), "is_best": False, "selected_for_edit": False})
+
+    groups = {}
+    for p in photos:
+        groups.setdefault(p["burst_id"], []).append(p)
+    for g in groups.values():
+        best = max(g, key=lambda x: x["score"])
+        best["is_best"] = True
+        best["selected_for_edit"] = True
+
+    selected = sum(1 for p in photos if p["selected_for_edit"])
+    return {"photos": photos, "total": n, "bursts": len(groups), "selected": selected, "time_reliable": time_reliable}
+
+
+@api_router.post("/selection/analyze")
+async def analyze_selection(req: SelectionRequest, user: User = Depends(get_current_user)):
+    if not req.files:
+        raise HTTPException(status_code=400, detail="No hay archivos para analizar")
+    return compute_selection(req.files)
+
+
 @api_router.get("/")
 async def root():
     return {"message": "RAW AI Studio API"}
-
-
 app.include_router(api_router)
 
 app.add_middleware(

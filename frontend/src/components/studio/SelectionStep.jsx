@@ -1,25 +1,59 @@
 import { useEffect, useState } from "react";
-import { analyzeFolder, burstCount } from "@/lib/rawSelection";
 import { Sparkles, ArrowRight, Layers, CheckCircle2, Images } from "lucide-react";
+import { SAMPLE_THUMBS } from "@/lib/rawSelection";
+import api from "@/lib/api";
 
 export default function SelectionStep({ files, onContinue }) {
   const [progress, setProgress] = useState(0);
-  const [photos, setPhotos] = useState(null);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
+    let active = true;
     let p = 0;
     const timer = setInterval(() => {
-      p = Math.min(100, p + Math.random() * 18 + 8);
+      p = Math.min(95, p + Math.random() * 12 + 5);
       setProgress(Math.round(p));
-      if (p >= 100) {
-        clearInterval(timer);
-        setPhotos(analyzeFolder(files));
-      }
     }, 220);
-    return () => clearInterval(timer);
+
+    (async () => {
+      try {
+        const meta = Array.from(files).map((f) => ({ name: f.name, size: f.size, last_modified: f.lastModified }));
+        const res = await api.post("/selection/analyze", { files: meta });
+        if (!active) return;
+        const byName = new Map(Array.from(files).map((f) => [f.name, f]));
+        const photos = res.data.photos.map((p, i) => ({
+          id: `${p.burst_id}-${i}-${p.name}`,
+          name: p.name,
+          size: p.size,
+          burstId: p.burst_id,
+          score: p.score,
+          thumb: SAMPLE_THUMBS[i % SAMPLE_THUMBS.length],
+          file: byName.get(p.name),
+          isBest: p.is_best,
+          selectedForEdit: p.selected_for_edit,
+        }));
+        clearInterval(timer);
+        setProgress(100);
+        setResult({ photos, total: res.data.total, bursts: res.data.bursts, selected: res.data.selected });
+      } catch (e) {
+        if (active) setError("No se pudo analizar la selección. Inténtalo de nuevo.");
+        clearInterval(timer);
+      }
+    })();
+
+    return () => { active = false; clearInterval(timer); };
   }, [files]);
 
-  if (!photos) {
+  if (error) {
+    return (
+      <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-8" data-testid="selection-error">
+        <p className="text-sm text-rose-400">{error}</p>
+      </section>
+    );
+  }
+
+  if (!result) {
     return (
       <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-8" data-testid="selection-analyzing">
         <div className="flex items-center gap-3">
@@ -35,12 +69,10 @@ export default function SelectionStep({ files, onContinue }) {
     );
   }
 
-  const bursts = burstCount(photos);
-  const best = photos.filter((p) => p.selectedForEdit).length;
   const stats = [
-    { icon: Images, label: "Fotos totales", value: photos.length },
-    { icon: Layers, label: "Ráfagas detectadas", value: bursts },
-    { icon: CheckCircle2, label: "Mejores tomas (verde)", value: best, accent: true },
+    { icon: Images, label: "Fotos totales", value: result.total },
+    { icon: Layers, label: "Ráfagas detectadas", value: result.bursts },
+    { icon: CheckCircle2, label: "Mejores tomas (verde)", value: result.selected, accent: true },
   ];
 
   return (
@@ -60,7 +92,7 @@ export default function SelectionStep({ files, onContinue }) {
         ))}
       </div>
 
-      <button data-testid="selection-continue-btn" onClick={() => onContinue(photos)}
+      <button data-testid="selection-continue-btn" onClick={() => onContinue(result.photos)}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02]">
         Revisar selección <ArrowRight className="h-4 w-4" />
       </button>

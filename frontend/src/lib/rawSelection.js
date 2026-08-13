@@ -35,11 +35,18 @@ export function analyzeFolder(fileList) {
   const files = Array.from(fileList).filter((f) => isRaw(f.name));
   files.sort((a, b) => (a.lastModified - b.lastModified) || a.name.localeCompare(b.name));
 
-  const BURST_GAP_MS = 2500;
+  const BURST_GAP_MS = 1500;
+  const MAX_BURST = 8;
+  const uniqueTimes = new Set(files.map((f) => f.lastModified)).size;
+  const timeReliable = files.length > 0 && uniqueTimes / files.length > 0.5;
+
   let burstId = 0;
   let lastTs = null;
+  let burstLen = 0;
   const photos = files.map((f, i) => {
-    if (lastTs === null || (f.lastModified - lastTs) > BURST_GAP_MS) burstId += 1;
+    const startNew = !timeReliable || lastTs === null || (f.lastModified - lastTs) > BURST_GAP_MS || burstLen >= MAX_BURST;
+    if (startNew) { burstId += 1; burstLen = 0; }
+    burstLen += 1;
     lastTs = f.lastModified;
     return {
       id: `${burstId}-${i}-${f.name}`,
