@@ -128,7 +128,7 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
             <div className="mt-4 rounded-xl border border-zinc-800 bg-[#101012] p-4" data-testid="compare-panel">
               <div className="grid grid-cols-2 gap-3">
                 {[a, b].map((p, i) => (
-                  <div key={i}>
+                  <div key={`${p.id}-${i}`}>
                     <Sel i={i} />
                     <img src={p.representative_image} alt={p.name} className="mt-2 aspect-[3/2] w-full rounded-lg object-cover" />
                   </div>
@@ -182,7 +182,7 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
                       {p.gallery_images?.length > 1 && (
                         <div className="mt-3 flex gap-1.5 overflow-x-auto" data-testid={`style-gallery-${p.id}`}>
                           {p.gallery_images.slice(0, 8).map((src, idx) => (
-                            <img key={idx} src={src} alt={`ref ${idx + 1}`} className="h-12 w-12 shrink-0 rounded-md object-cover ring-1 ring-zinc-800" />
+                            <img key={src} src={src} alt={`ref ${idx + 1}`} className="h-12 w-12 shrink-0 rounded-md object-cover ring-1 ring-zinc-800" />
                           ))}
                         </div>
                       )}

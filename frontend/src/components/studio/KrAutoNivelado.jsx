@@ -44,7 +44,7 @@ export default function KrAutoNivelado() {
     const xmps = Array.from(fileList || []).filter((f) => XMP_RE.test(f.name));
     setFiles(xmps); setProgress(0); setDone(0); setError(null); setFinished(null); setFirstText(null);
     if (!xmps.length) { toast.error("No se encontraron archivos .xmp en la carpeta"); return; }
-    try { setFirstText(await xmps[0].text()); } catch { /* preview opcional */ }
+    try { setFirstText(await xmps[0].text()); } catch (err) { console.warn("No se pudo leer el primer .xmp para la vista previa", err); }
   };
 
   const run = async () => {

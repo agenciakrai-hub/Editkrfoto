@@ -41,7 +41,8 @@ export default function Studio() {
   }, [projectId, navigate]);
 
   const persist = async (patch) => {
-    try { await api.patch(`/projects/${projectId}/state`, patch); } catch { /* noop */ }
+    try { await api.patch(`/projects/${projectId}/state`, patch); }
+    catch (err) { console.warn("No se pudo guardar el checkpoint de estado", err); }
   };
 
   const buildPayload = () => ({

@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration 9 — Regression validation for code-quality refactors: (a) backend _quality_score md5->sha256, (b) AuthContext useMemo/useCallback + logging catches, (c) Studio/KrAutoNivelado logging catches, (d) PhotographerStyles stable list keys. Frontend jest 10/10 PASS (selectionLogic.test.js incl. auto-tone precision cases). Backend regression 36/36 PASS effectively (34 first pass, 2 flaked with Cloudflare 502; both PASS in isolated retry). Explicit coverage: test_iteration5_selection::test_deterministic_scoring validates sha256-based deterministic scoring; test_raw_ai_studio auth tests validate /api/auth/me with/without Bearer and /api/auth/logout session delete; test_iteration7 covers per-photo XMP + preset passthrough + ZIP is .xmp-only. Frontend landing page renders correctly (Spanish, Continuar con Google button), no console errors — AuthContext refactor did not regress login route.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/photographer-styles, /api/projects/{id}/cloud-jobs (via public URL)", "issue": "Intermittent Cloudflare 502 during parallel full-suite run (same as iter8); passes on isolated retry. Infra flakiness, not code."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration5_selection.py",
+    "/app/backend/tests/test_raw_ai_studio.py",
+    "/app/backend/tests/test_iteration7_per_photo_and_preset.py",
+    "/app/frontend/src/lib/selectionLogic.test.js",
+    "/app/test_reports/pytest/iteration9_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "sha256 change in _quality_score is behavior-preserving for determinism (same input -> same hex prefix -> same float); confirmed by test_deterministic_scoring.",
+    "AuthContext useMemo/useCallback is correct: value memo depends on [user, loading, logout]; logout memoized on []. Empty-catch replacements now log via console.error/warn — improves debuggability without changing flow.",
+    "PhotographerStyles stable keys (style.id/name) fix eliminates React reconciliation bugs when list reorders — good.",
+    "Cloudflare 502 flakiness on public URL during heavy parallel runs is a known infra issue; not a code defect."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% effective (36/36 on retry; 34/36 first parallel pass due to 2 CF-502)", "frontend": "100% (10/10 jest)"},
+  "test_credentials": "Seeded per-module by fixtures per /app/memory/test_credentials.md; cleaned up in teardown.",
+  "seed_data_creation": "Module-scoped test-user + session_token in Mongo test_database (by existing fixtures).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Auth regression covered by tests/test_raw_ai_studio.py (auth_client fixture uses Bearer session token). Selection determinism covered by tests/test_iteration5_selection.py::test_deterministic_scoring — sha256 pseudo-score verified stable across two calls. If parallel run shows 502 on photographer-styles or cloud-jobs endpoints, rerun those tests in isolation before flagging.",
+  "rca of the issue": "N/A — no regressions from md5->sha256 or AuthContext refactor. Transient 502s are Cloudflare edge, reproducible only under parallel load and self-heal on retry."
+}

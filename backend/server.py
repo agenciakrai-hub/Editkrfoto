@@ -767,7 +767,7 @@ def _is_raw(name):
 
 
 def _quality_score(name, size):
-    h = int(hashlib.md5(name.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+    h = int(hashlib.sha256(name.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
     base = h * 70.0
     size_bonus = min(30.0, (size / (6 * 1024 * 1024)) * 30.0)
     return round(base + size_bonus)
