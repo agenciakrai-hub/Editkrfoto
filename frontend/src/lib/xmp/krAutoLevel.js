@@ -35,18 +35,19 @@ function injectAttr(xmp, attr, value) {
   return xmp.slice(0, insertAt) + insertion + xmp.slice(insertAt);
 }
 
-// Devuelve { text, changes }. `changes` lista los 5 parámetros con su valor original y nivelado.
-export function levelXmp(text) {
+// Devuelve { text, changes }. `deltas` opcional: mapa {attr: delta} que sobreescribe los fijos.
+export function levelXmp(text, deltas) {
   let out = text;
   const changes = [];
   for (const rule of LEVEL_RULES) {
+    const delta = deltas && typeof deltas[rule.attr] === "number" ? deltas[rule.attr] : rule.delta;
     const attrRe = new RegExp(`(crs:${rule.attr}=")([+-]?[0-9]*\\.?[0-9]+)(")`);
     const elRe = new RegExp(`(<crs:${rule.attr}>)([+-]?[0-9]*\\.?[0-9]+)(</crs:${rule.attr}>)`);
     const am = out.match(attrRe);
     const em = am ? null : out.match(elRe);
     const m = am || em;
     const base = m ? parseFloat(m[2]) : 0;
-    const leveled = clamp(base + rule.delta, rule.min, rule.max);
+    const leveled = clamp(base + delta, rule.min, rule.max);
     const newStr = fmtVal(leveled, rule.dec);
     if (am) out = out.replace(attrRe, `$1${newStr}$3`);
     else if (em) out = out.replace(elRe, `$1${newStr}$3`);

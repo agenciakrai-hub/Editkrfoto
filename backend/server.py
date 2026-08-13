@@ -128,11 +128,13 @@ class PhotographerStyleProfile(BaseModel):
     name: str
     gallery_url: str
     representative_image: Optional[str] = None
+    gallery_images: List[str] = Field(default_factory=list)
     images_analyzed: int = 0
     confidence: Optional[float] = None
     description: Optional[str] = None
     color_profile: Optional[Dict[str, Any]] = None
     edit_profile: Optional[Dict[str, Any]] = None
+    suggested_parameters: Optional[Dict[str, float]] = None
     status: str = "analyzing"  # analyzing | ready | failed
     error_message: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -548,8 +550,24 @@ STYLE_PROMPT = (
     '    "sharpening_look": "texto",\n'
     '    "consistency": "low|medium|high",\n'
     '    "summary": "resumen de la edición"\n'
+    "  }},\n"
+    '  "suggested_parameters": {{\n'
+    '    "exposure": número -1.5..1.5,\n'
+    '    "contrast": -40..40,\n'
+    '    "highlights": -60..40,\n'
+    '    "shadows": -40..60,\n'
+    '    "whites": -40..40,\n'
+    '    "blacks": -40..40,\n'
+    '    "clarity": -30..40,\n'
+    '    "vibrance": -40..40,\n'
+    '    "saturation": -60..40,\n'
+    '    "temperature": 3800..7500,\n'
+    '    "tint": -20..20\n'
     "  }}\n"
-    "}}"
+    "}}\n"
+    "En suggested_parameters da valores numéricos realistas de PUNTO DE PARTIDA que reproduzcan el "
+    "look detectado (p.ej. saturación negativa si es 'muted', temperatura alta si la piel es 'warm', "
+    "sombras positivas y luces negativas si el rango es suave y aireado)."
 )
 
 
@@ -590,14 +608,27 @@ async def analyze_photographer_style(profile_id):
             conf = float(conf)
         except (TypeError, ValueError):
             conf = None
+        sugg = data.get("suggested_parameters")
+        if isinstance(sugg, dict):
+            clean = {}
+            for k, v in sugg.items():
+                try:
+                    clean[k] = float(v)
+                except (TypeError, ValueError):
+                    continue
+            sugg = clean or None
+        else:
+            sugg = None
         await db.photographer_styles.update_one({"id": profile_id}, {"$set": {
             "status": "ready",
             "description": data.get("description"),
             "confidence": conf,
             "color_profile": data.get("color_profile"),
             "edit_profile": data.get("edit_profile"),
+            "suggested_parameters": sugg,
             "images_analyzed": len(images),
             "representative_image": rep,
+            "gallery_images": [u for u, _ in images],
         }})
     except Exception as exc:
         logging.exception("analyze_photographer_style failed")
@@ -652,6 +683,20 @@ app.add_middleware(
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def reap_stuck_jobs():
+    # Tras un reinicio, las tareas en memoria se pierden: marca como 'failed' todo lo que quedó a medias.
+    now = datetime.now(timezone.utc).isoformat()
+    await db.cloud_jobs.update_many(
+        {"status": {"$in": ["queued", "processing"]}},
+        {"$set": {"status": "failed", "error_message": "Interrumpido por reinicio del servidor. Vuelve a enviarlo.", "updated_at": now}},
+    )
+    await db.photographer_styles.update_many(
+        {"status": "analyzing"},
+        {"$set": {"status": "failed", "error_message": "Interrumpido por reinicio del servidor. Vuelve a analizar la galería."}},
+    )
 
 
 @app.on_event("shutdown")

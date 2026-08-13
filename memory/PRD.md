@@ -35,6 +35,13 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Estilos desde galería (PhotographerStyleProfile): analiza la URL pública de otro fotógrafo con visión (GPT-5.4 vía Universal Key), scraping HTML + 12 imágenes, devuelve color_profile + edit_profile + descripción + confianza. /api/photographer-styles CRUD + análisis en background. Seleccionable como estilo de referencia en Presets.
 - Testing: backend 22/22 pytest OK (auth, scoping cross-user, cloud jobs, XMP, photographer styles happy/fail path).
 
+### Iteración 4 (2026-08-13)
+- Aplicar estilo detectado: el análisis devuelve `suggested_parameters` (valores numéricos crs) que se aplican a los parámetros del revelado al seleccionar el estilo.
+- Miniaturas de galería: se guardan y muestran varias imágenes de referencia (`gallery_images`), no solo una.
+- Nivelado ajustable: KR Auto Nivelado permite afinar los 5 deltas (sliders) con vista previa en vivo antes de generar el ZIP.
+- Reanudar nube: reaper en @startup marca como `failed` los cloud_jobs (queued/processing) y photographer_styles (analyzing) que quedaron colgados tras un reinicio.
+- Testing: backend 23/23 pytest OK (regresión + reaper + shape), sin bugs.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

@@ -7,10 +7,15 @@ import KrAutoNivelado from "@/components/studio/KrAutoNivelado";
 import PhotographerStyles from "@/components/studio/PhotographerStyles";
 import api from "@/lib/api";
 
+const DEF_MAP = Object.fromEntries(PARAM_DEFS.map((p) => [p.key, p]));
+
 function configFromParams(params) {
   const cfg = defaultParameterConfig();
   for (const [key, value] of Object.entries(params || {})) {
-    if (cfg[key]) cfg[key] = { enabled: true, value: Number(value) };
+    const d = DEF_MAP[key];
+    if (!d) continue;
+    const clamped = Math.min(d.max, Math.max(d.min, Number(value)));
+    cfg[key] = { enabled: true, value: clamped };
   }
   return cfg;
 }
@@ -73,7 +78,17 @@ export default function PresetParamsStep({ count, onContinue }) {
     <div className="space-y-5">
       <KrAutoNivelado />
 
-      <PhotographerStyles activeName={presetName} onUseStyle={(n) => { setPresetName(n); toast.success(`Estilo de referencia "${n}" seleccionado`); }} />
+      <PhotographerStyles activeName={presetName} onUseStyle={(prof) => {
+        setPresetName(prof.name);
+        if (prof.precision_mode) setPrecision(prof.precision_mode);
+        const sugg = prof.suggested_parameters;
+        if (sugg && Object.keys(sugg).length) {
+          setConfig(configFromParams(sugg));
+          toast.success(`Estilo "${prof.name}" aplicado`, { description: `${Object.keys(sugg).length} parámetros ajustados desde la galería` });
+        } else {
+          toast.success(`Estilo de referencia "${prof.name}" seleccionado`);
+        }
+      }} />
 
       <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-6" data-testid="presets-step">
       <div className="flex items-center justify-between">

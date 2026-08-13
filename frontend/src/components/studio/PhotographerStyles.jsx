@@ -87,7 +87,7 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
               const clickable = p.status === "ready";
               return (
                 <div key={p.id} data-testid={`style-card-${p.id}`}
-                  onClick={() => clickable && onUseStyle?.(p.name)}
+                  onClick={() => clickable && onUseStyle?.(p)}
                   className={`rounded-xl border p-4 transition-all duration-200 ${clickable ? "cursor-pointer" : ""}
                     ${active ? "border-emerald-400/70 ring-2 ring-emerald-400/30 bg-emerald-400/[0.05]" : "border-zinc-800 bg-[#1c1c22] hover:border-zinc-600"}`}>
                   <div className="flex gap-3">
@@ -112,6 +112,13 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
 
                   {p.status === "ready" && (
                     <>
+                      {p.gallery_images?.length > 1 && (
+                        <div className="mt-3 flex gap-1.5 overflow-x-auto" data-testid={`style-gallery-${p.id}`}>
+                          {p.gallery_images.slice(0, 8).map((src, idx) => (
+                            <img key={idx} src={src} alt={`ref ${idx + 1}`} className="h-12 w-12 shrink-0 rounded-md object-cover ring-1 ring-zinc-800" />
+                          ))}
+                        </div>
+                      )}
                       {p.description && <p className="mt-3 text-xs leading-5 text-zinc-400">{p.description}</p>}
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <div className="rounded-lg border border-zinc-800 bg-[#101012] p-2.5">

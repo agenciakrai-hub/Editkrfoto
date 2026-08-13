@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 4 backend validation complete. New startup reaper + PhotographerStyleProfile shape changes verified, and full regression (iter1/iter2/iter3, LLM happy-paths excluded per instruction) passes. 23/23 unique tests green. (1) Startup reaper: seeded a cloud_jobs doc with status 'processing' and a photographer_styles doc with status 'analyzing', ran `sudo supervisorctl restart backend`, waited for backend to come back up, then confirmed both docs became status='failed' with Spanish error_message ('Interrumpido por reinicio del servidor...'). (2) Response shape: PhotographerStyleProfile now serialises suggested_parameters (Optional dict) and gallery_images (list). Verified both on GET one and GET list for the owner (5 gallery URLs + 11 CRS-style numeric params intact); cross-user still 404. Also verified backward-compat: legacy docs missing the new fields deserialize with defaults (gallery_images=[], suggested_parameters=None). Regression: auth/me, projects CRUD + cross-user scoping, style-profiles auth/scoping, cloud-jobs full lifecycle + auth + 404 scoping + empty-filenames 400, XMP ZIP happy + auth + validation, photographer-styles auth (list/create/get/delete) + cross-user scoping + failure-path (example.com -> 'failed' with error_message) all pass. LLM happy-path (Wikipedia gallery + example.com no-images) NOT re-triggered per instruction to save credits (only failure-path which still runs but doesn't call vision LLM). Note: during the first combined run 3 tests hit 502 while the reaper test was restarting the backend on a parallel xdist worker — all 3 re-ran clean once backend was up. Added _wait_backend_up() gate to shape tests to smooth this, but the underlying tests are unaffected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_reaper_and_shape.py",
+    "/app/test_reports/pytest/iteration4_full.xml",
+    "/app/test_reports/pytest/iteration4_rerun.xml",
+    "/app/test_reports/pytest/iteration4_shape_only.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Reaper implementation is correct and idempotent: covers both cloud_jobs (queued|processing) and photographer_styles (analyzing) and sets a user-friendly Spanish error_message. Consider also stamping updated_at on photographer_styles (currently only cloud_jobs gets updated_at bumped) so the UI can show when it was reaped.",
+    "server.py has grown to ~705 lines with multiple concerns (auth, projects, style-profiles, cloud-jobs, photographer-styles, reaper). Splitting into routers is overdue; iteration 4 pushed it further past a comfortable single-file size.",
+    "@app.on_event('startup'/'shutdown') is deprecated in modern FastAPI in favour of lifespan context managers — not urgent but worth migrating on the next refactor.",
+    "PhotographerStyleProfile.suggested_parameters is typed Dict[str, float] but the LLM may return int/None for some keys; consider Dict[str, Optional[float]] or a Pydantic model per parameter to make validation stricter and catch bad LLM output early.",
+    "No cap on gallery_images list length in the stored doc — if a future scraper returns hundreds of URLs, GET /api/photographer-styles list will balloon. Consider trimming to N or paginating."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4_reaper_and_shape.py (new)"
+  ],
+  "success_rate": {"backend": "100% (23/23 excluding paid LLM happy-path per instruction)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Emergent Google session-based; seeded fresh users iter4A/iter4B into test_database with 7-day sessions, cleaned up in fixture teardown.",
+  "seed_data_creation": "Ephemeral: 2 users/sessions, 1 stuck cloud_jobs doc, 1 stuck photographer_styles doc, 2 ready photographer_styles docs (shape + defaults). All deleted in test teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 additive changes (reaper + suggested_parameters + gallery_images) are stable. Test file: /app/backend/tests/test_iteration4_reaper_and_shape.py. Note: the reaper test restarts backend via supervisorctl — if you run it in parallel with other test files under xdist loadscope, tests in another worker may briefly hit 502; either run reaper file separately or add _wait_backend_up() gate (already applied to shape tests). Do NOT re-run photographer-styles Wikipedia happy-path (paid LLM); iter3 already validated it end-to-end."
+}
