@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Sparkles, ArrowRight, Layers, CheckCircle2, Images } from "lucide-react";
 import { SAMPLE_THUMBS } from "@/lib/rawSelection";
-import { analyzeFile, groupAndSelect, mapLimit, autoBasicFromMetrics } from "@/lib/imageAnalysis";
+import { analyzeFile, groupAndSelect, mapLimit } from "@/lib/imageAnalysis";
+
+const DEFAULT_BASIC = { exposure: 0.1, contrast: 0, highlights: -15, shadows: 15, whites: 5, blacks: -5 };
 
 export default function SelectionStep({ files, onContinue }) {
   const [progress, setProgress] = useState(0);
@@ -28,7 +30,7 @@ export default function SelectionStep({ files, onContinue }) {
           score: it.score,
           thumb: SAMPLE_THUMBS[i % SAMPLE_THUMBS.length],
           file: it.file,
-          basic: autoBasicFromMetrics(it.metrics),
+          basic: it.metrics?.basic || DEFAULT_BASIC,
           isBest: it.isBest,
           selectedForEdit: it.selectedForEdit,
         }));

@@ -1,4 +1,14 @@
-import { groupAndSelect, hamming, autoBasicFromMetrics } from "./selectionLogic";
+import { groupAndSelect, hamming, autoToneFromHistogram } from "./selectionLogic";
+
+// Construye un histograma sintético: cuenta 'n' píxeles centrados en 'center' (con spread).
+function histAround(center, n = 10000, spread = 8) {
+  const h = new Array(256).fill(0);
+  for (let k = 0; k < n; k++) {
+    const v = Math.max(0, Math.min(255, Math.round(center + (Math.random() * 2 - 1) * spread)));
+    h[v]++;
+  }
+  return { hist: h, total: n };
+}
 
 const M = (sharpness, exposure, hash) => ({ sharpness, exposure, hash });
 
@@ -59,22 +69,34 @@ test("sin métricas (extracción fallida) no se descarta la foto", () => {
   expect(r.every((x) => x.selectedForEdit)).toBe(true);
 });
 
-test("corrección básica es POR FOTO (foto oscura sube exposición, clara la baja)", () => {
-  const dark = autoBasicFromMetrics({ luma: 60, shadowClip: 0.01, highClip: 0 });
-  const bright = autoBasicFromMetrics({ luma: 190, shadowClip: 0, highClip: 0.01 });
-  expect(dark.exposure).toBeGreaterThan(0);   // subexpuesta -> +EV
-  expect(bright.exposure).toBeLessThan(0);    // sobreexpuesta -> -EV
-  expect(dark.exposure).not.toBe(bright.exposure); // cada foto distinta
+test("auto-tono es POR FOTO (oscura sube exposición, clara la baja)", () => {
+  const dark = histAround(60);
+  const bright = histAround(190);
+  const d = autoToneFromHistogram(dark.hist, dark.total);
+  const b = autoToneFromHistogram(bright.hist, bright.total);
+  expect(d.exposure).toBeGreaterThan(0);
+  expect(b.exposure).toBeLessThan(0);
+  expect(d.exposure).not.toBe(b.exposure);
 });
 
-test("recorte de altas luces baja blancos y comprime altas luces", () => {
-  const clipped = autoBasicFromMetrics({ luma: 150, shadowClip: 0, highClip: 0.1 });
-  expect(clipped.whites).toBeLessThanOrEqual(0);
-  expect(clipped.highlights).toBeLessThan(-15);
+test("auto-tono recupera altas luces cuando hay recorte", () => {
+  const h = new Array(256).fill(0);
+  for (let i = 100; i < 180; i++) h[i] = 50;
+  h[255] = 3000; // fuerte recorte de blancos
+  const total = h.reduce((a, x) => a + x, 0);
+  const t = autoToneFromHistogram(h, total);
+  expect(t.highlights).toBeLessThan(0);
 });
 
-test("dos fotos con luma distinta dan exposición distinta", () => {
-  const a = autoBasicFromMetrics({ luma: 90 });
-  const b = autoBasicFromMetrics({ luma: 140 });
-  expect(a.exposure).not.toBe(b.exposure);
+test("auto-tono abre sombras cuando están empastadas", () => {
+  const h = new Array(256).fill(0);
+  for (let i = 60; i < 140; i++) h[i] = 50;
+  h[0] = 3000; // sombras empastadas
+  const total = h.reduce((a, x) => a + x, 0);
+  const t = autoToneFromHistogram(h, total);
+  expect(t.shadows).toBeGreaterThan(0);
+});
+
+test("auto-tono con datos vacíos no rompe", () => {
+  expect(autoToneFromHistogram(null, 0)).toEqual({ exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 });
 });

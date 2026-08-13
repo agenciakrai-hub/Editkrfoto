@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 8 — Verified per-photo histogram-based auto-tone (autoToneFromHistogram) precision. Frontend jest suite 10/10 PASS (all selectionLogic tests including 4 new auto-tone tests: dark->exposure>0, bright->exposure<0 & different, highlight-clip->highlights<0, crushed-shadows->shadows>0, empty->safe zeros). Backend regression 36/36 PASS in isolation (5/5 iteration7 per-photo XMP + preset preservation + cloud-job zip; 31/31 prior suites). Confirmed per-photo XMP precision: DARK.CR3 basic.exposure=0.85 -> crs:Exposure2012=+0.85, BRIGHT.NEF basic.exposure=-0.60 -> crs:Exposure2012=-0.60; Highlights/Shadows/Whites/Blacks all differ per photo; ZIP contains only .xmp files.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/projects/{id}/cloud-jobs (via public URL)", "issue": "Intermittent Cloudflare 502 during full-suite parallel run; passes on isolated retry. Infrastructure flakiness, not application code."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/frontend/src/lib/selectionLogic.test.js",
+    "/app/backend/tests/test_iteration7_per_photo_and_preset.py",
+    "/app/test_reports/pytest/iteration8_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Per-photo auto-tone (histogram percentile-based) is well-designed: uses 0.5%/50%/99.5% percentiles for exposure/whites/blacks and measured clipping for highlights/shadows recovery — accurate photographic approach.",
+    "Full-suite runs occasionally hit Cloudflare 502 on cloud-jobs endpoint; consider adding retry/backoff in test harness if infra flakiness persists (not code issue)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (36/36 on isolated retry; 35/36 in one flaky parallel run due to 502)", "frontend": "100% (10/10 jest)"},
+  "test_credentials": "Seeded per module (test-user-it7-<ts> + session token) as per /app/memory/test_credentials.md; cleaned up in fixture teardown.",
+  "seed_data_creation": "Module-scoped test user + session created in Mongo test_database by test_iteration7 fixture; deleted on teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "autoToneFromHistogram lives in /app/frontend/src/lib/selectionLogic.js; jest tests in selectionLogic.test.js validate percentile-based auto-tone logic. Backend generate-xmp per-photo path lives in /app/backend/server.py (build_photo_xmp/xmp_entries). Test_iteration7_per_photo_and_preset.py is the authoritative regression for per-photo XMP precision + preset passthrough. Cloudflare edge sometimes returns 502 during parallel suites — rerun failing test in isolation before flagging.",
+  "rca of the issue": "N/A — no bugs found. Transient 502 during one full-suite run is Cloudflare/ingress flakiness (test passes on immediate retry, backend supervisor RUNNING)."
+}

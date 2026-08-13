@@ -10,18 +10,35 @@ export const AMBIGUOUS_MARGIN = 0.92; // 2ª mejor ≥92% de la mejor → tambi�
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
-// Corrección de luz AUTOMÁTICA POR FOTO a partir de las métricas medidas (luma + recorte).
-// Cada foto recibe su propio ajuste básico (no un valor fijo para todas).
-export function autoBasicFromMetrics(m) {
-  if (!m) return { exposure: 0.10, contrast: 0, highlights: -15, shadows: 15, whites: 5, blacks: -5 };
-  const luma = m.luma != null ? m.luma : 118;
-  const sc = m.shadowClip || 0;
-  const hc = m.highClip || 0;
-  const exposure = clamp((118 - luma) / 70, -1.5, 1.5);
-  const highlights = clamp(hc > 0.02 ? -Math.round(hc * 500) : -15, -80, 0);
-  const shadows = clamp(sc > 0.02 ? Math.round(sc * 500) : 15, 0, 80);
-  const whites = clamp(hc > 0.05 ? -10 : 5, -30, 30);
-  const blacks = clamp(sc > 0.05 ? -15 : -5, -40, 20);
+// Auto-tono PRECISO por foto a partir del histograma de luminancia (0..255).
+// Basado en percentiles reales: fija punto de negros/blancos sin recortar, lleva el tono
+// medio al objetivo y recupera altas luces/sombras según el recorte medido. Devuelve los
+// valores de los sliders básicos de Camera Raw para ESTA foto.
+export function autoToneFromHistogram(hist, total) {
+  if (!hist || !total) return { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 };
+  const cdf = new Array(256);
+  let acc = 0;
+  for (let i = 0; i < 256; i++) { acc += hist[i]; cdf[i] = acc; }
+  const perc = (p) => { const t = p * total; for (let i = 0; i < 256; i++) if (cdf[i] >= t) return i; return 255; };
+
+  const lo = perc(0.005), hi = perc(0.995), med = perc(0.5);
+  const TARGET_MID = 115, TARGET_WHITE = 246, TARGET_BLACK = 10;
+
+  // Exposición: lleva la mediana al tono medio objetivo (en EV).
+  let exposure = clamp(Math.log2(TARGET_MID / Math.max(4, med)), -1.5, 1.5);
+  const f = Math.pow(2, exposure);
+  const hiE = Math.min(255, hi * f);   // extremos estimados tras la exposición
+  const loE = lo * f;
+
+  // Blancos/negros: estira el rango hasta casi tocar los extremos sin recortar.
+  const whites = clamp(Math.round((TARGET_WHITE - hiE) / 1.5), -60, 60);
+  const blacks = clamp(Math.round((TARGET_BLACK - loE) / 1.5), -60, 40);
+
+  // Recuperación: comprime altas luces si hay recorte alto; abre sombras si están empastadas.
+  const highClip = hist[255] / total, lowClip = hist[0] / total;
+  const highlights = clamp(Math.round(-highClip * 500 - Math.max(0, hiE - 248) * 3), -100, 0);
+  const shadows = clamp(Math.round(lowClip * 500 + Math.max(0, 8 - loE) * 3 + 8), 0, 100);
+
   return { exposure: Math.round(exposure * 100) / 100, contrast: 0, highlights, shadows, whites, blacks };
 }
 

@@ -66,6 +66,10 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Nuevo payload per-foto: `{photos:[{filename,basic}], creative_params, preset_xmp}` (con compatibilidad al formato antiguo). Cloud jobs también.
 - Verificado: jest 9/9 + backend 36/36. DARK.xmp Exposure +0.85 vs BRIGHT.xmp −0.60; Clarity/Vibrance/Texture del preset preservados. Sin bugs.
 
+### Iteración 9 (2026-08-13): precisión del auto-tono básico
+- La corrección básica por foto pasó de una fórmula simple (exposición por luma media) a un AUTO-TONO real basado en el HISTOGRAMA (`autoToneFromHistogram`): percentiles 0.5/50/99.5 para fijar exposición al tono medio objetivo, blancos/negros hasta casi tocar los extremos sin recortar, y recuperación de altas luces/sombras según el recorte medido. Calculado por foto en el análisis (metrics.basic).
+- Verificado: jest 10/10 (auto-tono oscuro→+EV, claro→−EV, recuperación de luces/sombras) + backend 36/36 (per-foto llega al XMP). Sin bugs de código.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
