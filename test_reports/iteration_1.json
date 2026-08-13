@@ -1,0 +1,32 @@
+{
+  "summary": "First-iteration end-to-end validation for RAW AI Studio MVP. Backend: 9/9 pytest tests pass (auth-me with/without/invalid token, projects CRUD scoped-per-user, cross-user access denial, PATCH state deep-merge preservation, XMP ZIP generation content + status transition, empty filenames -> 400, unauthenticated -> 401). Frontend: auth-gated routing works (/dashboard redirects to / without session, loads with cookie), 'Nuevo proyecto' modal + submit navigates to /studio?project=ID, Studio renders 6-step stepper with pick-folder-btn and folder-input as required. Deeper studio steps (AI selection/review/processing) require real folder upload via webkitdirectory which is not exercisable headlessly — reported as environment-limited, not a bug.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_raw_ai_studio.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py build_xmp: mixed formatting logic — exposure is formatted with '+.2f' but contrast/highlights/etc. always cast to int (int(round(value))). This truncates fractional values for parameters like clarity/vibrance which Lightroom accepts as decimals. Consider preserving one decimal or trusting caller-provided floats.",
+    "server.py CORS_ORIGINS defaults to '*' while allow_credentials=True. In production, browsers reject credentialed requests with wildcard origin — set CORS_ORIGINS explicitly to the frontend URL(s) in .env.",
+    "server.py /auth/session stores expires_at as ISO string; get_current_user handles both str/datetime — fine, but consistency would be better (always store as datetime).",
+    "PATCH /projects/{id}/state accepts an untyped Dict[str, Any] with no size/key validation — potential for unbounded rawai_state growth. Consider a max-size guard or schema.",
+    "generate_xmp reads buf.read() into a second BytesIO before StreamingResponse — unnecessary double-copy; can pass 'buf' directly after buf.seek(0).",
+    "No pagination on GET /api/projects (hard-capped at 500 via to_list(500)). Fine for MVP but flag for scale."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_raw_ai_studio.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100% (of headless-testable flows)" },
+  "test_credentials": "Session-based Emergent Google Auth — no passwords. Test sessions were seeded into test_database.user_sessions and cleaned up after run (per /app/memory/test_credentials.md).",
+  "seed_data_creation": "Two ephemeral test users/sessions seeded in Mongo (test_database) — one for pytest fixture (auto cleanup), one for browser flow (manually cleaned). Created project 'TEST_Boda_UI_Playwright' was also DELETEd via API in the test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend pytest suite lives at /app/backend/tests/test_raw_ai_studio.py — reusable regression. Uses REACT_APP_BACKEND_URL env var (falls back to /app/frontend/.env). Seeds its own session in Mongo. Studio inner steps (AI selection -> review -> profile -> presets -> processing -> XMP report UI) require webkitdirectory folder input which Playwright cannot populate; they should be validated manually or via component-level tests. Backend generate-xmp is already fully covered via API. All data-testids referenced in the request are present and working: google-login-btn, new-project-btn, create-modal, project-name-input, submit-project-btn, studio-stepper (contains 6 step-* children), pick-folder-btn, folder-input.",
+  "rca of the issue": "N/A — no bugs found in the requested scope."
+}

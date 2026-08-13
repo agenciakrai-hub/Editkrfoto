@@ -1,0 +1,112 @@
+{
+  "project_name": "RAW AI Studio - Selección y edición IA de bodas",
+  "app_type": "hybrid_fullstack",
+  "theme": "dark_pro_studio",
+  "language": "es",
+  "design_principles": {
+    "fusion_over_imitation": "Combine high-end Lightroom/Capture One pro-darkroom precision with sleek modern SaaS dashboard ergonomics and high-contrast tactile status indicators.",
+    "emotion_first": "Provide a high-focus, low-distraction studio environment for wedding photographers to process thousands of RAW files effortlessly.",
+    "content_is_king": "The wedding photograph is the hero. Neutral dark neutral backgrounds (#101012, #141414, #1E1E22) ensure absolute color perception.",
+    "contrast_and_hierarchy": "1px crisp zinc borders, emerald green AI best-shot accents (#34D399 / emerald-400), and stark pure white primary CTAs with dark text."
+  },
+  "colors": {
+    "background_base": "#101012",
+    "background_panel": "#141418",
+    "background_card": "#1C1C22",
+    "background_elevated": "#24242C",
+    "borders": {
+      "subtle": "#27272A",
+      "default": "#3F3F46",
+      "active": "#52525B",
+      "emerald_glow": "rgba(52, 211, 153, 0.3)"
+    },
+    "text": {
+      "primary": "#F4F4F5",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A",
+      "accent_emerald": "#34D399"
+    },
+    "accents": {
+      "primary_button_bg": "#FFFFFF",
+      "primary_button_text": "#09090B",
+      "emerald_ai": "#34D399",
+      "emerald_badge_bg": "rgba(52, 211, 153, 0.12)",
+      "amber_burst": "#F59E0B",
+      "rose_discard": "#F43F5E",
+      "blue_info": "#3B82F6"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk, Outfit, sans-serif",
+      "body": "Inter, system-ui, sans-serif",
+      "mono": "JetBrains Mono, Source Code Pro, monospace"
+    },
+    "hierarchy": {
+      "h1_hero": "text-3xl sm:text-4xl font-bold tracking-tight text-zinc-100",
+      "h2_section": "text-xl sm:text-2xl font-semibold tracking-tight text-zinc-100",
+      "h3_subsection": "text-lg font-medium text-zinc-200",
+      "body_text": "text-sm text-zinc-300 leading-relaxed",
+      "small_label": "text-xs font-mono uppercase tracking-wider text-zinc-400"
+    }
+  },
+  "layout_and_grids": {
+    "stepper_layout": "Horizontal 8-step visual studio pipeline header with status icons, step numbers, progress indicators, and active stage glowing emerald highlights.",
+    "workspace_layout": "3-column pro photo suite layout: Left navigation/folder browser sidebar (col-span-3), Center canvas viewer/grid (col-span-6 or 7), Right parameter/preset panel (col-span-3).",
+    "bento_grid": "Asymmetric bento grid for Project Dashboard and Final Report stats cards using gap-4 to gap-6 and rounded-xl containers with zinc-800 borders.",
+    "review_grid": "Responsive photo grid (grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3) with burst group indicators, green AI selection badges, and quick hotkey/click toggle controls."
+  },
+  "visual_enhancers": {
+    "glassmorphism": "backdrop-blur-xl bg-zinc-900/80 border border-zinc-800/80",
+    "card_styles": "bg-[#141418] border border-zinc-800 hover:border-zinc-700 transition-all rounded-xl shadow-lg",
+    "active_state": "ring-2 ring-emerald-400/50 border-emerald-500/80 bg-emerald-950/20",
+    "slider_customization": "Dark slider tracks with emerald filled range and sharp metallic handles for precision exposure/white balance/preset tuning."
+  },
+  "motion": {
+    "transitions": "transition-all duration-200 ease-out",
+    "framer_motion": {
+      "page_transition": "{ initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.25 } }",
+      "card_hover": "{ whileHover: { scale: 1.02, transition: { duration: 0.15 } } }",
+      "burst_expand": "{ layout: true, transition: { type: 'spring', stiffness: 300, damping: 25 } }"
+    }
+  },
+  "image_urls": {
+    "wedding_samples": [
+      {
+        "url": "https://images.unsplash.com/photo-1519741196428-6a2175fa2557?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwzfHx3ZWRkaW5nJTIwcGhvdG9ncmFwaHklMjBjb3VwbGUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODY2MjI1NTZ8MA&ixlib=rb-4.1.0&q=85",
+        "category": "Wedding Couple Portrait - Veil",
+        "description": "Retrato íntimo de novios bajo el velo"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1724280120520-c52b4c1170fd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHw0fHx3ZWRkaW5nJTIwcGhvdG9ncmFwaHklMjBjb3VwbGUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODY2MjI1NTZ8MA&ixlib=rb-4.1.0&q=85",
+        "category": "Wedding Ceremony Couple",
+        "description": "Pareja de boda tradicional en exteriores"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1630526720753-aa4e71acf67d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHx3ZWRkaW5nJTIwcGhvdG9ncmFwaHklMjBjb3VwbGUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODY2MjI1NTZ8MA&ixlib=rb-4.1.0&q=85",
+        "category": "Winter Wedding Portrait",
+        "description": "Retrato de novios en paisaje invernal"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1715285977649-4a83c0820399?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwyfHx3ZWRkaW5nJTIwcGhvdG9ncmFwaHklMjBjb3VwbGUlMjBwb3J0cmFpdHxlbnwwfHx8fDE3ODY2MjI1NTZ8MA&ixlib=rb-4.1.0&q=85",
+        "category": "Outdoor Romantic Moment",
+        "description": "Beso romántico de novios en la naturaleza"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Keep full Spanish interface throughout the app (buttons, titles, messages, tooltips, stats).",
+    "Support all 8 steps in the Studio Stepper: 1. Proyecto -> 2. Carpeta RAW -> 3. Selección IA -> 4. Revisión -> 5. Perfil de Cámara -> 6. Presets y Correcciones IA -> 7. Generación XMP -> 8. Reporte Final.",
+    "Implement actual downloadable ZIP package with real generated XML/XMP sidecar files using JSZip or synthetic Blob download for sidecars.",
+    "Provide mock Google Login / Sign-in state with user profile dropdown and studio credentials.",
+    "Ensure every clickable button, tab, card, input, and interactive control includes explicit data-testid attributes.",
+    "Use dark professional photography theme aesthetics exclusively (bg #101012, panels #141418, emerald #34D399 accents).",
+    "Use sonner for notifications (e.g. 'Proyecto guardado', 'XMP generado con éxito', 'Carpeta RAW cargada')."
+  ],
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": {
+    "testing_attributes": "All interactive elements MUST include kebab-case data-testid attributes.",
+    "responsive_design": "Ensure grid layouts adapt from mobile to multi-monitor desktop viewports.",
+    "no_transparent_overlays": "Never use fully transparent backgrounds on panels or dropdowns; always use elevated dark zinc or glassmorphic backdrop-blur.",
+    "toast_usage": "Use sonner for toasts from /app/src/components/ui/sonner.jsx or import { toast } from 'sonner'."
+  }
+}
