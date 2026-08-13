@@ -47,6 +47,13 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Solución: la selección IA se calcula ahora en el backend (POST /api/selection/analyze), testeable. Detecta si los timestamps son fiables (únicos/total > 0.5); si NO lo son, cada foto es su propia ráfaga y se selecciona todo; si lo son, agrupa ráfagas rápidas (<1500ms) con tope de 8 fotos y elige la mejor de cada una.
 - Verificado: 1000 timestamps idénticos → 1000 seleccionadas; 1000 realistas → 583. Testing 30/30 OK.
 
+### Iteración 6 (2026-08-13)
+- Modelo de edición actualizado: **ajustes básicos (luz/tono + balance de blancos) siempre automáticos por IA**; presets y estilos solo aplican la **capa creativa** (claridad, vibración, saturación) y NUNCA tocan lo básico. `AUTO_BASIC_PARAMS` se inyecta siempre en el XMP; `pickCreative`/`creativeParametersFromConfig`/`fullParametersFromConfig` en lib/paramDefs.js. Panel de Presets separa "Ajustes básicos — automático" (bloqueado) de "Ajustes creativos".
+- Antes/Después: previsualización simulada con filtros CSS derivados de los parámetros (slider comparador). BeforeAfterPreview.jsx.
+- Comparar estilos: dos galerías lado a lado con tabla de diferencias color/edición + confianza (selects). En PhotographerStyles.
+- Exportar perfil: descarga un estilo detectado como `.xmp` listo para Lightroom (buildStyleXmp).
+- Verificado: compilación limpia + XMP end-to-end (base auto + creativa con atributos crs correctos). Flujos UI internos dependen del selector de carpeta (no automatizable headless).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

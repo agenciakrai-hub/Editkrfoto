@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { saveAs } from "file-saver";
 import { toast } from "sonner";
-import { Globe, Sparkles, Loader2, Trash2, Check, AlertTriangle, Palette, Scissors } from "lucide-react";
+import { Globe, Sparkles, Loader2, Trash2, Check, AlertTriangle, Palette, Scissors, Download, ArrowLeftRight } from "lucide-react";
+import { buildStyleXmp } from "@/lib/xmp/buildXmp";
 import api from "@/lib/api";
 
 function StatusPill({ status }) {
@@ -14,7 +16,19 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [creating, setCreating] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [cmp, setCmp] = useState(["", ""]);
   const pollers = useRef({});
+
+  const readyProfiles = profiles.filter((p) => p.status === "ready");
+
+  const exportXmp = (p, e) => {
+    e.stopPropagation();
+    const xmp = buildStyleXmp(p.name, p.suggested_parameters || {});
+    const safe = (p.name || "estilo").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "_") || "estilo";
+    saveAs(new Blob([xmp], { type: "application/rdf+xml" }), `${safe}.xmp`);
+    toast.success("Perfil exportado", { description: `${safe}.xmp listo para Lightroom` });
+  };
 
   const refresh = () => api.get("/photographer-styles").then((r) => {
     setProfiles(r.data);
@@ -80,6 +94,59 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
           </button>
         </div>
 
+        {readyProfiles.length >= 2 && (
+          <div className="mt-4">
+            <button data-testid="compare-toggle-btn" onClick={() => { setCompareMode((v) => !v); setCmp([readyProfiles[0].id, readyProfiles[1].id]); }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
+              <ArrowLeftRight className="h-3.5 w-3.5" /> {compareMode ? "Cerrar comparación" : "Comparar estilos"}
+            </button>
+          </div>
+        )}
+
+        {compareMode && readyProfiles.length >= 2 && (() => {
+          const a = readyProfiles.find((p) => p.id === cmp[0]) || readyProfiles[0];
+          const b = readyProfiles.find((p) => p.id === cmp[1]) || readyProfiles[1];
+          const rows = [
+            ["Balance de blancos", a.color_profile?.white_balance_tendency, b.color_profile?.white_balance_tendency],
+            ["Contraste", a.color_profile?.contrast, b.color_profile?.contrast],
+            ["Saturación", a.color_profile?.saturation, b.color_profile?.saturation],
+            ["Tono de piel", a.color_profile?.skin_tone, b.color_profile?.skin_tone],
+            ["Rango tonal", a.color_profile?.tonal_range, b.color_profile?.tonal_range],
+            ["Recorte", a.edit_profile?.crop_style, b.edit_profile?.crop_style],
+            ["Luz / sombra", a.edit_profile?.light_shadow_treatment, b.edit_profile?.light_shadow_treatment],
+            ["Nitidez", a.edit_profile?.sharpening_look, b.edit_profile?.sharpening_look],
+            ["Consistencia", a.edit_profile?.consistency, b.edit_profile?.consistency],
+            ["Confianza", a.confidence != null ? `${Math.round(a.confidence)}%` : "-", b.confidence != null ? `${Math.round(b.confidence)}%` : "-"],
+          ];
+          const Sel = ({ i }) => (
+            <select data-testid={`compare-select-${i}`} value={cmp[i]} onChange={(e) => setCmp((c) => (i === 0 ? [e.target.value, c[1]] : [c[0], e.target.value]))}
+              className="w-full rounded-md border border-zinc-700 bg-[#101012] px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-emerald-400/60">
+              {readyProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          );
+          return (
+            <div className="mt-4 rounded-xl border border-zinc-800 bg-[#101012] p-4" data-testid="compare-panel">
+              <div className="grid grid-cols-2 gap-3">
+                {[a, b].map((p, i) => (
+                  <div key={i}>
+                    <Sel i={i} />
+                    <img src={p.representative_image} alt={p.name} className="mt-2 aspect-[3/2] w-full rounded-lg object-cover" />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 overflow-hidden rounded-lg border border-zinc-800">
+                {rows.map(([label, va, vb], idx) => (
+                  <div key={label} className={`grid grid-cols-[1fr_1.4fr_1.4fr] gap-2 px-3 py-2 text-[11px] ${idx % 2 ? "bg-[#141418]" : "bg-[#1c1c22]"}`}>
+                    <span className="text-zinc-500">{label}</span>
+                    <span className="text-zinc-300">{va || "—"}</span>
+                    <span className="text-zinc-300">{vb || "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {profiles.length > 0 && (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {profiles.map((p) => {
@@ -130,9 +197,15 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
                           <p className="mt-1 text-[11px] leading-4 text-zinc-400">{p.edit_profile?.summary || `${p.edit_profile?.crop_style || "-"} · consistencia ${p.edit_profile?.consistency || "-"}`}</p>
                         </div>
                       </div>
-                      {active
-                        ? <p className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-emerald-400"><Check className="h-3.5 w-3.5" /> Estilo de referencia seleccionado</p>
-                        : <p className="mt-3 text-[11px] text-zinc-600">Toca para usar como estilo de referencia</p>}
+                      <div className="mt-3 flex items-center justify-between gap-2">
+                        {active
+                          ? <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400"><Check className="h-3.5 w-3.5" /> Estilo de referencia seleccionado</p>
+                          : <p className="text-[11px] text-zinc-600">Toca para usar como estilo de referencia</p>}
+                        <button data-testid={`export-style-${p.id}`} onClick={(e) => exportXmp(p, e)}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800">
+                          <Download className="h-3 w-3" /> Exportar .xmp
+                        </button>
+                      </div>
                     </>
                   )}
                   {p.status === "failed" && <p className="mt-3 text-xs text-rose-400">{p.error_message || "No se pudo analizar la galería."}</p>}
