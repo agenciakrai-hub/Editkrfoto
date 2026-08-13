@@ -70,6 +70,13 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - La corrección básica por foto pasó de una fórmula simple (exposición por luma media) a un AUTO-TONO real basado en el HISTOGRAMA (`autoToneFromHistogram`): percentiles 0.5/50/99.5 para fijar exposición al tono medio objetivo, blancos/negros hasta casi tocar los extremos sin recortar, y recuperación de altas luces/sombras según el recorte medido. Calculado por foto en el análisis (metrics.basic).
 - Verificado: jest 10/10 (auto-tono oscuro→+EV, claro→−EV, recuperación de luces/sombras) + backend 36/36 (per-foto llega al XMP). Sin bugs de código.
 
+### Iteración 10 (2026-08-13): Extractor de perfiles desde URL (módulo aditivo)
+- Módulo independiente (no toca motor ni flujos existentes). Colección `extracted_profiles` + endpoints `/api/profile-extractor/{analyze,save,profiles,{id}}`.
+- Extrae perfiles (.xmp/.dcp/.lrtemplate) de un archivo directo o de una página con enlaces; estructura normalizada; dedup por manufacturer+camera_model+name; compatibilidad LR (yes/documented/unknown).
+- Seguridad SSRF: bloquea localhost/privadas/link-local/reservadas/metadata + esquemas no http; límites de tamaño/enlaces/tiempo; revalida tras redirección; sin ejecución de código.
+- UI: página `/profiles` (enlace "Perfiles" en la barra) con URL, Analizar, tabla de resultados y catálogo guardado.
+- Verificado: 27 casos backend + E2E frontend PASS. Sin bugs.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

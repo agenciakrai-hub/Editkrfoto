@@ -818,6 +818,216 @@ async def analyze_selection(req: SelectionRequest, user: User = Depends(get_curr
 @api_router.get("/")
 async def root():
     return {"message": "RAW AI Studio API"}
+
+
+# ----------------------------- Profile Extractor (URL) -----------------------------
+import socket
+import ipaddress
+from urllib.parse import urlparse
+
+PROFILE_EXTS = ("xmp", "dcp", "lrtemplate", "xml")
+MAX_FETCH_BYTES = 8 * 1024 * 1024
+MAX_LINKS = 25
+MAX_FILE_FETCHES = 12
+
+
+class ExtractedProfile(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str = ""
+    display_name: str = ""
+    manufacturer: str = ""
+    camera_model: str = ""
+    profile_type: str = ""
+    format: str = ""
+    source_url: str = ""
+    download_url: str = ""
+    compatible: str = "unknown"  # yes | documented | unknown
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    status: str = "new"
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class AnalyzeUrlRequest(BaseModel):
+    url: str
+
+
+class SaveProfilesRequest(BaseModel):
+    profiles: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+def _assert_safe_url(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="Solo se permiten URLs http/https")
+    host = parsed.hostname
+    if not host:
+        raise HTTPException(status_code=400, detail="URL inválida")
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        raise HTTPException(status_code=400, detail="No se pudo resolver el host")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            raise HTTPException(status_code=400, detail="URL no permitida (dirección interna)")
+
+
+def _fetch(url, max_bytes=MAX_FETCH_BYTES):
+    _assert_safe_url(url)
+    resp = requests.get(url, timeout=15, stream=True, headers={"User-Agent": "WeddingRAWAI-ProfileExtractor/1.0"}, allow_redirects=True)
+    resp.raise_for_status()
+    if resp.url != url:
+        _assert_safe_url(resp.url)  # revalida tras redirección
+    content = b""
+    for chunk in resp.iter_content(65536):
+        if not chunk:
+            continue
+        remaining = max_bytes - len(content)
+        if remaining <= 0:
+            break
+        content += chunk[:remaining]
+        if len(content) >= max_bytes:
+            break
+    resp.close()
+    return content, resp.headers.get("content-type", "")
+
+
+def _ext_of(url):
+    path = urlparse(url).path.lower()
+    return path.rsplit(".", 1)[-1] if "." in path else ""
+
+
+def _parse_profile(content, ext, url):
+    text = content.decode("utf-8", errors="ignore")
+    prof = {"name": "", "display_name": "", "manufacturer": "", "camera_model": "",
+            "profile_type": "", "format": ext, "source_url": url, "download_url": url,
+            "compatible": "unknown", "metadata": {}, "status": "new"}
+    if ext == "xmp":
+        m = re.search(r'crs:CameraProfile="([^"]+)"', text)
+        n = re.search(r'crs:Name="([^"]+)"', text) or re.search(r'<crs:Name>.*?<rdf:li[^>]*>([^<]+)</rdf:li>', text, re.S)
+        make = re.search(r'tiff:Make="([^"]+)"', text)
+        model = re.search(r'tiff:Model="([^"]+)"', text)
+        prof["name"] = (m.group(1) if m else (n.group(1) if n else "")).strip()
+        prof["display_name"] = prof["name"]
+        prof["manufacturer"] = make.group(1).strip() if make else ""
+        prof["camera_model"] = model.group(1).strip() if model else ""
+        prof["profile_type"] = "camera_profile" if m else ("preset" if re.search(r'crs:(Exposure2012|ToneCurve|Look)', text) else "xmp")
+        prof["compatible"] = "yes" if (m or n) else "documented"
+    elif ext == "lrtemplate":
+        t = re.search(r'title\s*=\s*"([^"]+)"', text)
+        internal = re.search(r'internalName\s*=\s*"([^"]+)"', text)
+        prof["name"] = (t.group(1) if t else (internal.group(1) if internal else "")).strip()
+        prof["display_name"] = prof["name"]
+        prof["profile_type"] = "lrtemplate"
+        prof["compatible"] = "yes" if (t or internal) else "documented"
+    elif ext == "dcp":
+        prof["profile_type"] = "camera_profile"
+        prof["compatible"] = "yes"  # DCP es un perfil de cámara real de Lightroom
+    else:
+        prof["profile_type"] = ext or "unknown"
+        prof["compatible"] = "documented"
+    if not prof["name"]:
+        base = urlparse(url).path.rsplit("/", 1)[-1]
+        prof["name"] = re.sub(r"\.(xmp|dcp|lrtemplate|xml)$", "", base, flags=re.I) or base
+        prof["display_name"] = prof["name"]
+    return prof
+
+
+def _extract_from_html(html, base_url):
+    links = []
+    for m in re.finditer(r'href=["\']([^"\']+)["\']', html, re.I):
+        href = m.group(1)
+        full = urljoin(base_url, href)
+        if _ext_of(full) in PROFILE_EXTS and full not in links:
+            links.append(full)
+        if len(links) >= MAX_LINKS:
+            break
+    profiles = []
+    for link in links[:MAX_FILE_FETCHES]:
+        try:
+            content, _ = _fetch(link, max_bytes=4 * 1024 * 1024)
+            profiles.append(_parse_profile(content, _ext_of(link), link))
+        except Exception:
+            profiles.append({"name": urlparse(link).path.rsplit("/", 1)[-1], "display_name": "", "manufacturer": "",
+                             "camera_model": "", "profile_type": _ext_of(link), "format": _ext_of(link),
+                             "source_url": base_url, "download_url": link, "compatible": "documented",
+                             "metadata": {}, "status": "new"})
+    return profiles
+
+
+def _dedup_key(p):
+    return f"{(p.get('manufacturer') or '').lower()}|{(p.get('camera_model') or '').lower()}|{(p.get('name') or '').lower()}"
+
+
+@api_router.post("/profile-extractor/analyze")
+async def analyze_url(req: AnalyzeUrlRequest, user: User = Depends(get_current_user)):
+    url = req.url.strip()
+    try:
+        content, ctype = _fetch(url)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"No se pudo acceder a la URL: {exc}")
+
+    ext = _ext_of(url)
+    errors = []
+    if ext in PROFILE_EXTS:
+        profiles = [_parse_profile(content, ext, url)]
+    elif "html" in ctype or content[:200].lstrip().startswith(b"<"):
+        profiles = _extract_from_html(content.decode("utf-8", errors="ignore"), url)
+        if not profiles:
+            errors.append("No se encontraron archivos de perfil (.xmp/.dcp/.lrtemplate) enlazados en la página.")
+    else:
+        profiles = []
+        errors.append("El contenido no es un perfil ni una página HTML con perfiles.")
+
+    existing = await db.extracted_profiles.find({"user_id": user.user_id}, {"_id": 0}).to_list(1000)
+    existing_keys = {_dedup_key(e) for e in existing}
+    new_count = 0
+    for p in profiles:
+        if _dedup_key(p) in existing_keys:
+            p["status"] = "existing"
+        else:
+            p["status"] = "new"
+            new_count += 1
+    return {"url": url, "found": len(profiles), "new": new_count,
+            "existing": len(profiles) - new_count, "errors": errors, "profiles": profiles}
+
+
+@api_router.post("/profile-extractor/save")
+async def save_profiles(req: SaveProfilesRequest, user: User = Depends(get_current_user)):
+    existing = await db.extracted_profiles.find({"user_id": user.user_id}, {"_id": 0}).to_list(2000)
+    existing_keys = {_dedup_key(e) for e in existing}
+    saved = 0
+    for p in req.profiles:
+        key = _dedup_key(p)
+        if key in existing_keys:
+            continue
+        prof = ExtractedProfile(user_id=user.user_id, name=p.get("name", ""), display_name=p.get("display_name") or p.get("name", ""),
+                                manufacturer=p.get("manufacturer", ""), camera_model=p.get("camera_model", ""),
+                                profile_type=p.get("profile_type", ""), format=p.get("format", ""),
+                                source_url=p.get("source_url", ""), download_url=p.get("download_url", ""),
+                                compatible=p.get("compatible", "unknown"), metadata=p.get("metadata", {}), status="saved")
+        await db.extracted_profiles.insert_one(prof.model_dump())
+        existing_keys.add(key)
+        saved += 1
+    return {"saved": saved}
+
+
+@api_router.get("/profile-extractor/profiles", response_model=List[ExtractedProfile])
+async def list_extracted_profiles(user: User = Depends(get_current_user)):
+    docs = await db.extracted_profiles.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    return [ExtractedProfile(**d) for d in docs]
+
+
+@api_router.delete("/profile-extractor/profiles/{profile_id}")
+async def delete_extracted_profile(profile_id: str, user: User = Depends(get_current_user)):
+    res = await db.extracted_profiles.delete_one({"id": profile_id, "user_id": user.user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    return {"ok": True}
 app.include_router(api_router)
 
 app.add_middleware(

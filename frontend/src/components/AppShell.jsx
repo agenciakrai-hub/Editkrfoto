@@ -27,6 +27,11 @@ export default function AppShell({ children }) {
           </button>
 
           {user && (
+            <div className="flex items-center gap-2">
+            <button data-testid="nav-profiles-btn" onClick={() => navigate("/profiles")}
+              className="hidden rounded-full border border-zinc-800 bg-[#141418] px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-700 sm:block">
+              Perfiles
+            </button>
             <div className="relative" ref={ref}>
               <button data-testid="user-menu-btn" onClick={() => setOpen((o) => !o)}
                 className="flex items-center gap-2.5 rounded-full border border-zinc-800 bg-[#141418] py-1 pl-1 pr-3 hover:border-zinc-700">
@@ -47,6 +52,7 @@ export default function AppShell({ children }) {
                   </button>
                 </div>
               )}
+            </div>
             </div>
           )}
         </div>
