@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import AppShell from "@/components/AppShell";
 import api from "@/lib/api";
-import { Link2, Loader2, Save, Trash2, Search, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Link2, Loader2, Save, Trash2, Search, CheckCircle2, AlertTriangle, FileJson, FileArchive } from "lucide-react";
+import { saveAs } from "file-saver";
 
 const COMPAT = {
   yes: { label: "Compatible LR", cls: "text-emerald-300 bg-emerald-400/10" },
@@ -46,6 +47,16 @@ export default function ProfileExtractor() {
     await api.delete(`/profile-extractor/profiles/${id}`);
     setSaved((s) => s.filter((x) => x.id !== id));
     toast.success("Perfil eliminado");
+  };
+
+  const exportCatalog = async (kind) => {
+    try {
+      const res = await api.get(`/profile-extractor/export/${kind}`, { responseType: "blob" });
+      saveAs(res.data, kind === "json" ? "catalogo_perfiles.json" : "catalogo_perfiles_xmp.zip");
+      toast.success(kind === "json" ? "Catálogo exportado (JSON)" : "Catálogo exportado (ZIP .xmp)");
+    } catch (e) {
+      toast.error(e?.response?.status === 400 ? "El catálogo está vacío" : "No se pudo exportar");
+    }
   };
 
   const Row = ({ p, i }) => (
@@ -109,7 +120,21 @@ export default function ProfileExtractor() {
         )}
       </div>
 
-      <h2 className="font-display mt-8 text-lg font-semibold">Catálogo de perfiles ({saved.length})</h2>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-display text-lg font-semibold">Catálogo de perfiles ({saved.length})</h2>
+        {saved.length > 0 && (
+          <div className="flex gap-2">
+            <button data-testid="export-json-btn" onClick={() => exportCatalog("json")}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
+              <FileJson className="h-3.5 w-3.5" /> Exportar JSON
+            </button>
+            <button data-testid="export-zip-btn" onClick={() => exportCatalog("zip")}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
+              <FileArchive className="h-3.5 w-3.5" /> Exportar ZIP .xmp
+            </button>
+          </div>
+        )}
+      </div>
       {saved.length === 0 ? (
         <p className="mt-2 text-sm text-zinc-600">Aún no has guardado perfiles.</p>
       ) : (

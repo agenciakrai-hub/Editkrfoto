@@ -1,0 +1,37 @@
+{
+  "summary": "Backend-only tests for the new profile-extractor catalog export endpoints (JSON + ZIP). Seeded 2 test users (A/B) with sessions in test_database; saved 2 profiles for A with duplicate display_names to also exercise filename dedup; user B kept empty for empty-catalog assertions. All 15 tests pass on the public preview URL.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration11_profile_export.py",
+    "/app/test_reports/pytest/iteration11_export.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 1111 lines — approaching the 700-line guideline; consider splitting into modules (profiles, extractor, xmp) for maintainability. Not a bug, but flagged per code-review guidelines.",
+    "/api/profile-extractor/export/zip returns HTTPException 400 for empty catalog — good. /export/json returns 200 with [] — acceptable per spec and matches the front-end's conditional button visibility (buttons only appear when catalog has items).",
+    "Filename dedup in export_profiles_zip uses a counter keyed by sanitized base name — correctly prevents ZIP entry overwrites (verified: two profiles with the same display_name produce base.xmp and base_2.xmp).",
+    "_profile_to_xmp escapes double-quotes in name/make/model by replacing with single quotes — reasonable minimal escaping; consider full XML entity escaping (& < >) if user-supplied names can contain those chars.",
+    "Good: JSON export projection excludes both _id and user_id ({'_id': 0, 'user_id': 0}); confirmed no leakage in response bodies."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "n/a (skipped per request)"},
+  "test_credentials": "Emergent Google Auth session-based. Two ephemeral users+sessions seeded in test_database (TOKEN_A / TOKEN_B env vars). Cleaned up after run.",
+  "seed_data_creation": "Inserted 2 users + 2 sessions + 2 extracted_profiles (TEST_ prefixed, same display_name, different make/model to bypass save-dedup and hit filename-dedup). Cleaned up post-run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file /app/backend/tests/test_iteration11_profile_export.py needs TOKEN_A/TOKEN_B env vars (seed via /app/memory/test_credentials.md snippet) and REACT_APP_BACKEND_URL. Run with `-n 0` (single worker) — the two exporting test classes depend on TestSeedUserA running first; xdist loadscope splits classes across workers and races the seed. TestRegression.test_delete_profile_still_works performs cleanup of the TEST_ profiles it inserted.",
+  "verified_behavior": {
+    "auth": "401 without/with bad Bearer on both /export/json and /export/zip.",
+    "json_export": "200, content-type application/json, Content-Disposition attachment filename=catalogo_perfiles.json, body is JSON array, no user_id/_id leaked, scoped per user.",
+    "zip_export": "200, application/zip, filename=catalogo_perfiles_xmp.zip; every entry .xmp; duplicate display_names -> unique filenames (base.xmp + base_2.xmp); valid crs XMP with crs:Name; crs:CameraProfile present for profile_type=camera_profile; tiff:Make/Model present when provided; scoped per user.",
+    "empty_catalog": "/export/zip -> 400 'El catálogo está vacío'; /export/json -> 200 with []."
+  }
+}

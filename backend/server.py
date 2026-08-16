@@ -1028,6 +1028,55 @@ async def delete_extracted_profile(profile_id: str, user: User = Depends(get_cur
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
     return {"ok": True}
+
+
+def _profile_to_xmp(p):
+    name = (p.get("display_name") or p.get("name") or "Perfil").replace('"', "'")
+    lines = ['   crs:Version="15.0"', f'   crs:Name="{name}"']
+    if p.get("profile_type") == "camera_profile":
+        lines.append(f'   crs:CameraProfile="{name}"')
+    make = (p.get("manufacturer") or "").replace('"', "'")
+    model = (p.get("camera_model") or "").replace('"', "'")
+    tiff = ""
+    if make:
+        tiff += f'\n   tiff:Make="{make}"'
+    if model:
+        tiff += f'\n   tiff:Model="{model}"'
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return (f'<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Wedding RAW AI">\n'
+            f' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n'
+            f'  <rdf:Description rdf:about=""\n'
+            f'   xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"\n'
+            f'   xmlns:tiff="http://ns.adobe.com/tiff/1.0/"\n'
+            f'   xmlns:xmp="http://ns.adobe.com/xap/1.0/"\n'
+            f'   xmp:ModifyDate="{now}"{tiff}\n'
+            f'{chr(10).join(lines)}>\n  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n')
+
+
+@api_router.get("/profile-extractor/export/json")
+async def export_profiles_json(user: User = Depends(get_current_user)):
+    import json
+    docs = await db.extracted_profiles.find({"user_id": user.user_id}, {"_id": 0, "user_id": 0}).sort("created_at", -1).to_list(5000)
+    data = json.dumps(docs, ensure_ascii=False, indent=2).encode("utf-8")
+    return StreamingResponse(io.BytesIO(data), media_type="application/json",
+        headers={"Content-Disposition": 'attachment; filename="catalogo_perfiles.json"'})
+
+
+@api_router.get("/profile-extractor/export/zip")
+async def export_profiles_zip(user: User = Depends(get_current_user)):
+    docs = await db.extracted_profiles.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    if not docs:
+        raise HTTPException(status_code=400, detail="El catálogo está vacío")
+    used = {}
+    entries = []
+    for p in docs:
+        base = re.sub(r"[^\w\- ]+", "", (p.get("display_name") or p.get("name") or "perfil")).strip().replace(" ", "_") or "perfil"
+        used[base] = used.get(base, 0) + 1
+        fname = f"{base}.xmp" if used[base] == 1 else f"{base}_{used[base]}.xmp"
+        entries.append((fname, _profile_to_xmp(p)))
+    buf = build_zip_from_entries(entries)
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="catalogo_perfiles_xmp.zip"'})
 app.include_router(api_router)
 
 app.add_middleware(
