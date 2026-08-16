@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, Check, Layers } from "lucide-react";
+import { ArrowRight, Check, Layers, Users, User, UserX, AlertTriangle, UserCheck } from "lucide-react";
 import Thumbnail from "@/components/studio/Thumbnail";
 
 export default function ReviewStep({ initialPhotos, onContinue }) {
@@ -18,6 +18,10 @@ export default function ReviewStep({ initialPhotos, onContinue }) {
           <h2 className="font-display text-lg font-semibold">Revisa la selección</h2>
           <p className="mt-1 text-sm text-zinc-500">
             Toca cualquier foto para incluirla o excluirla de la cola de edición IA. Las verdes van a edición.
+            <span className="mt-1 block text-xs text-zinc-600">
+              <span className="text-amber-400">⚠ Dudas</span> = la IA no tiene una ganadora clara (decides tú) ·
+              <span className="text-emerald-400"> Cara distinta</span> = misma ráfaga pero las caras cambiaron (foto diferente).
+            </span>
           </p>
         </div>
         <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-sm font-medium text-emerald-300" data-testid="review-count">
@@ -40,6 +44,24 @@ export default function ReviewStep({ initialPhotos, onContinue }) {
               <span className="absolute left-2 top-2 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-300 backdrop-blur">
                 <Layers className="h-3 w-3" /> R{p.burstId}
               </span>
+              {p.facesAnalyzed && (
+                <span className="absolute right-2 bottom-2 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-zinc-200 backdrop-blur" data-testid={`faces-${p.name}`}>
+                  {p.noPeople ? <UserX className="h-3 w-3 text-zinc-400" /> : p.isGroup ? <Users className="h-3 w-3 text-sky-300" /> : <User className="h-3 w-3 text-zinc-200" />}
+                  {p.noPeople ? "Sin personas" : p.faceCount}
+                </span>
+              )}
+              <div className="absolute left-2 bottom-2 flex flex-col gap-1">
+                {p.doubt && (
+                  <span className="flex w-fit items-center gap-1 rounded-md bg-amber-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950 shadow" data-testid={`doubt-${p.name}`}>
+                    <AlertTriangle className="h-3 w-3" /> Dudas
+                  </span>
+                )}
+                {p.faceDistinct && (
+                  <span className="flex w-fit items-center gap-1 rounded-md bg-emerald-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-950 shadow" data-testid={`distinct-${p.name}`}>
+                    <UserCheck className="h-3 w-3" /> Cara distinta
+                  </span>
+                )}
+              </div>
             </div>
             <div className="px-2 py-1.5">
               <p className="truncate font-mono text-[11px] text-zinc-400">{p.name}</p>

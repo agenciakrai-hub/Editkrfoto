@@ -101,6 +101,16 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Backend sin cambios (ya mapea `contrast`→Contrast2012). Verificado end-to-end: 2 fotos → XMP distintos (DARK +0.60 EV / BRIGHT −0.44 EV) con contraste y capa creativa correctos. jest 18/18 OK.
 - El auto-tono antiguo (`autoToneFromHistogram`) se conserva como fallback y para el laboratorio de comparación.
 
+### Iteración 15 (2026-08-16): Capa de caras (Fase 1) — selección IA con detección de personas
+- Librería **@vladmandic/face-api** (local, gratis, sin nube). Modelos TinyFaceDetector servidos desde `/public/models` (verificado 200 en preview; detección real confirmada: 4 caras en foto de grupo).
+- `faceLogic.js` (puro, testeado): `facesChanged(a,b)` → mismo nº de caras y sin desplazamientos >6% del encuadre = misma toma; si cambian = **foto distinta**. jest 5/5.
+- `faceEngine.js` (capa extra, NO toca el motor de selección): `loadFaceModels` (inicializa backend tfjs webgl→fallback), `detectFacesFromUrl`, `applyFaceLayer`.
+- `applyFaceLayer` corre **solo sobre ráfagas (>1) y fotos ya seleccionadas** (rápido). Añade por foto: `faceCount`, `isGroup` (≥3), `noPeople`, y afina ráfagas: **rescata** hermanas cuya configuración de caras cambió (`faceDistinct`, se marcan como seleccionadas) y marca **`doubt`** cuando hay varias tomas iguales sin ganadora clara.
+- UI: `SelectionStep` muestra 2ª fase "Analizando caras…" + resumen (grupo / rescatadas / dudas). `ReviewStep` muestra badges por foto: nº personas / grupo / sin personas, **⚠ Dudas**, **Cara distinta**, con leyenda.
+- Garantía: el motor solo AÑADE selecciones (nunca quita) → **mínimo 1 foto por ráfaga** siempre. Si los modelos fallan, el flujo continúa sin caras (no bloquea).
+- PENDIENTE Fase 2: filtros (grupo / sin personas / protagonistas), agrupado automático de caras (clustering con face_recognition) + etiquetado por el usuario (novia/novio/invitados).
+- NOTA: el flujo completo en el estudio requiere subir una carpeta de RAW real (no automatizable en headless); validado por partes (detección e2e + tests + compilación). Pendiente validación del usuario con fotos reales.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
