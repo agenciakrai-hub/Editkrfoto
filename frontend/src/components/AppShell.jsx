@@ -62,6 +62,17 @@ export default function AppShell({ children }) {
                     <p className="truncate text-sm font-medium text-zinc-100">{user.name}</p>
                     <p className="truncate text-xs text-zinc-500">{user.email}</p>
                   </div>
+                  <div className="border-b border-zinc-800 py-1 sm:hidden">
+                    {NAV.map((n) => (
+                      <button key={n.to} data-testid={`menu-${n.testId}`}
+                        onClick={() => { setOpen(false); navigate(n.to); }}
+                        className={`flex w-full items-center px-4 py-2.5 text-sm hover:bg-zinc-800/60 ${
+                          location.pathname === n.to ? "text-emerald-300" : "text-zinc-300"
+                        }`}>
+                        {n.label}
+                      </button>
+                    ))}
+                  </div>
                   <button data-testid="logout-btn" onClick={logout}
                     className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-800/60">
                     <LogOut className="h-4 w-4" /> Cerrar sesión
