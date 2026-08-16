@@ -94,6 +94,13 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Verificado: jest 8/8 del nuevo motor (oscura→+EV, clara→−EV, topes por modo, contraluz→+sombras, clave alta no sobreexpone, degenerados no rompen). Compila y renderiza OK.
 - PENDIENTE (tras validación): sustituir `autoToneFromHistogram` por el motor v2 en el flujo del estudio y cloud, y aplicar el modo de precisión elegido por foto.
 
+### Iteración 14 (2026-08-16): Motor v2 CONECTADO al flujo real
+- `imageAnalysis.metricsFromBitmap` ahora calcula `photometrics` por foto (histograma global + ponderado al centro) durante la selección; se adjunta a cada foto en `SelectionStep`.
+- `Studio.buildPayload` calcula los básicos por foto con `computeBasic(photometrics, mode)` (motor v2) aplicando el **modo de precisión elegido**; fallback a base técnica si no hay fotometría (selección restaurada). Vale para local y nube.
+- `PRECISION_MODES` ahora son reales: Conservador / Equilibrado (default) / Agresivo, con topes ±EV efectivos.
+- Backend sin cambios (ya mapea `contrast`→Contrast2012). Verificado end-to-end: 2 fotos → XMP distintos (DARK +0.60 EV / BRIGHT −0.44 EV) con contraste y capa creativa correctos. jest 18/18 OK.
+- El auto-tono antiguo (`autoToneFromHistogram`) se conserva como fallback y para el laboratorio de comparación.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

@@ -31,6 +31,7 @@ export default function SelectionStep({ files, onContinue }) {
           thumb: SAMPLE_THUMBS[i % SAMPLE_THUMBS.length],
           file: it.file,
           basic: it.metrics?.basic || DEFAULT_BASIC,
+          photometrics: it.metrics?.photometrics || null,
           isBest: it.isBest,
           selectedForEdit: it.selectedForEdit,
         }));

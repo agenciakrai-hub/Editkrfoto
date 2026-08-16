@@ -53,9 +53,9 @@ export function pickCreative(params) {
 }
 
 export const PRECISION_MODES = [
-  { key: "fast", label: "Rápido", desc: "Procesado veloz, ideal para grandes volúmenes." },
-  { key: "balanced", label: "Equilibrado", desc: "Balance recomendado entre calidad y velocidad." },
-  { key: "precise", label: "Preciso", desc: "Máxima fidelidad, análisis más detallado." },
+  { key: "conservative", label: "Conservador", desc: "Correcciones sutiles (±0.35 EV). Máxima seguridad." },
+  { key: "balanced", label: "Equilibrado", desc: "Balance recomendado (±0.6 EV)." },
+  { key: "aggressive", label: "Agresivo", desc: "Correcciones amplias (±1.0 EV). Máximo impacto." },
 ];
 
 // Presets de estilo: SOLO capa creativa (claridad, vibración, saturación).

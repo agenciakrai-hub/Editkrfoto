@@ -28,10 +28,19 @@ function metricsFromBitmap(bmp) {
 
   const gray = new Float32Array(w * h);
   const hist = new Array(256).fill(0);
-  let sum = 0;
+  const histCenter = new Array(256).fill(0);
+  let sum = 0, totalCenter = 0;
+  const cx = (w - 1) / 2, cy = (h - 1) / 2;
+  const maxD2 = cx * cx + cy * cy || 1;
+  const SIG2 = 2 * 0.42 * 0.42; // gaussiana radial normalizada (fotómetro ponderado al centro)
   for (let i = 0, p = 0; i < d.length; i += 4, p++) {
     const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-    gray[p] = g; sum += g; hist[Math.min(255, g | 0)]++;
+    const gi = Math.min(255, g | 0);
+    gray[p] = g; sum += g; hist[gi]++;
+    const x = p % w, y = (p / w) | 0;
+    const dx = x - cx, dy = y - cy;
+    const wgt = Math.exp(-((dx * dx + dy * dy) / maxD2) / SIG2);
+    histCenter[gi] += wgt; totalCenter += wgt;
   }
   // Nitidez: varianza del laplaciano (más alto = más enfocado / detalle).
   let mean = 0, n = 0;
@@ -74,7 +83,9 @@ function metricsFromBitmap(bmp) {
   let hash = 0n;
   for (let i = 0; i < 64; i++) if (g8[i] > m8) hash |= (1n << BigInt(i));
 
-  return { sharpness, exposure, hash, luma: avg, shadowClip, highClip, basic: autoToneFromHistogram(hist, total) };
+  return { sharpness, exposure, hash, luma: avg, shadowClip, highClip,
+    basic: autoToneFromHistogram(hist, total),
+    photometrics: computePhotometrics({ histGlobal: hist, totalGlobal: total, histCenter, totalCenter }) };
 }
 
 export async function analyzeFile(file) {
@@ -85,46 +96,15 @@ export async function analyzeFile(file) {
   finally { if (bmp.close) bmp.close(); }
 }
 
-// --- Motor v2 (laboratorio): histograma global + PONDERADO AL CENTRO para comparar ---
-function labMetricsFromBitmap(bmp, mode = "balanced") {
-  const w = Math.min(256, bmp.width) || 256;
-  const h = Math.max(1, Math.round(w * (bmp.height / bmp.width)));
-  const c = document.createElement("canvas");
-  c.width = w; c.height = h;
-  const ctx = c.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(bmp, 0, 0, w, h);
-  const d = ctx.getImageData(0, 0, w, h).data;
-
-  const histGlobal = new Array(256).fill(0);
-  const histCenter = new Array(256).fill(0);
-  let totalCenter = 0;
-  const cx = (w - 1) / 2, cy = (h - 1) / 2;
-  const sigma = 0.42; // fracción del radio para la ponderación gaussiana
-  const maxD = Math.hypot(cx, cy) || 1;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      const g = Math.min(255, (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0);
-      histGlobal[g] += 1;
-      const dist = Math.hypot(x - cx, y - cy) / maxD;
-      const wgt = Math.exp(-(dist * dist) / (2 * sigma * sigma));
-      histCenter[g] += wgt;
-      totalCenter += wgt;
-    }
-  }
-  const totalGlobal = w * h;
-  const photometrics = computePhotometrics({ histGlobal, totalGlobal, histCenter, totalCenter });
-  const oldBasic = autoToneFromHistogram(histGlobal, totalGlobal);
-  const newBasic = computeBasic(photometrics, mode);
-  return { photometrics, oldBasic, newBasic };
-}
-
+// --- Motor v2 (laboratorio): reutiliza la misma fotometría que el flujo real para comparar ---
 // Analiza una foto para el laboratorio de comparación (motor antiguo vs v2).
 export async function analyzeFileForLab(file, mode = "balanced") {
   const bmp = await bitmapFromFile(file);
   if (!bmp) return null;
-  try { return labMetricsFromBitmap(bmp, mode); }
-  catch { return null; }
+  try {
+    const m = metricsFromBitmap(bmp);
+    return { photometrics: m.photometrics, oldBasic: m.basic, newBasic: computeBasic(m.photometrics, mode) };
+  } catch { return null; }
   finally { if (bmp.close) bmp.close(); }
 }
 

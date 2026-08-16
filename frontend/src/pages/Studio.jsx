@@ -12,6 +12,7 @@ import ProcessingModeChoice from "@/components/studio/ProcessingModeChoice";
 import ProcessingStep from "@/components/studio/ProcessingStep";
 import ReportStep from "@/components/studio/ReportStep";
 import { creativeParametersFromConfig, AUTO_BASIC_PARAMS } from "@/lib/paramDefs";
+import { computeBasic } from "@/lib/rawaistudio/exposureEngine";
 import { analyzeFolder } from "@/lib/rawSelection";
 import api from "@/lib/api";
 
@@ -45,14 +46,22 @@ export default function Studio() {
     catch (err) { console.warn("No se pudo guardar el checkpoint de estado", err); }
   };
 
-  const buildPayload = () => ({
-    photos: sendPhotos.map((p) => ({ filename: p.name, basic: p.basic || AUTO_BASIC_PARAMS })),
-    creative_params: presetInfo.presetXmpText ? {} : creativeParametersFromConfig(presetInfo.config),
-    preset_xmp: presetInfo.presetXmpText || null,
-    camera_profile: profileChoice.profile,
-    precision_mode: presetInfo.precisionMode,
-    preset_name: presetInfo.presetName,
-  });
+  const buildPayload = () => {
+    const mode = presetInfo.precisionMode || "balanced";
+    return {
+      // Motor v2: básicos por foto desde la fotometría (ponderada al sujeto) + modo de precisión.
+      // Si una foto no tiene fotometría (p.ej. selección restaurada) se usa su base o la base técnica.
+      photos: sendPhotos.map((p) => ({
+        filename: p.name,
+        basic: p.photometrics ? computeBasic(p.photometrics, mode) : (p.basic || AUTO_BASIC_PARAMS),
+      })),
+      creative_params: presetInfo.presetXmpText ? {} : creativeParametersFromConfig(presetInfo.config),
+      preset_xmp: presetInfo.presetXmpText || null,
+      camera_profile: profileChoice.profile,
+      precision_mode: mode,
+      preset_name: presetInfo.presetName,
+    };
+  };
 
   const xmpPayload = useMemo(() => presetInfo && buildPayload(), [sendPhotos, presetInfo, profileChoice]); // eslint-disable-line
 
