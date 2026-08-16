@@ -1,11 +1,19 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Aperture, LogOut } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
+const NAV = [
+  { to: "/dashboard", label: "Proyectos", testId: "nav-dashboard-btn" },
+  { to: "/styles", label: "Estilos", testId: "nav-styles-btn" },
+  { to: "/learning", label: "Aprendizaje", testId: "nav-learning-btn" },
+  { to: "/profiles", label: "Perfiles", testId: "nav-profiles-btn" },
+];
+
 export default function AppShell({ children }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -28,10 +36,18 @@ export default function AppShell({ children }) {
 
           {user && (
             <div className="flex items-center gap-2">
-            <button data-testid="nav-profiles-btn" onClick={() => navigate("/profiles")}
-              className="hidden rounded-full border border-zinc-800 bg-[#141418] px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:border-zinc-700 sm:block">
-              Perfiles
-            </button>
+            <nav className="hidden items-center gap-1 sm:flex">
+              {NAV.map((n) => (
+                <button key={n.to} data-testid={n.testId} onClick={() => navigate(n.to)}
+                  className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                    location.pathname === n.to
+                      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-300"
+                      : "border-zinc-800 bg-[#141418] text-zinc-300 hover:border-zinc-700"
+                  }`}>
+                  {n.label}
+                </button>
+              ))}
+            </nav>
             <div className="relative" ref={ref}>
               <button data-testid="user-menu-btn" onClick={() => setOpen((o) => !o)}
                 className="flex items-center gap-2.5 rounded-full border border-zinc-800 bg-[#141418] py-1 pl-1 pr-3 hover:border-zinc-700">

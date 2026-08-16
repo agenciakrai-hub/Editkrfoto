@@ -77,6 +77,14 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - UI: página `/profiles` (enlace "Perfiles" en la barra) con URL, Analizar, tabla de resultados y catálogo guardado.
 - Verificado: 27 casos backend + E2E frontend PASS. Sin bugs.
 
+### Iteración 12 (2026-08-16): Portado desde app de referencia — Biblioteca de Estilos + RAW AI Learning
+- Navegación ampliada (AppShell): barra con Proyectos / Estilos / Aprendizaje / Perfiles + resaltado de página activa.
+- **Biblioteca de Estilos** (página dedicada `/styles`): hub central que reutiliza el componente PhotographerStyles para crear/analizar/gestionar estilos de galería fuera del wizard.
+- **RAW AI Learning** (`/learning`, "Aprende de mis correcciones"): sube tus .xmp editados a mano → parseo cliente (parseXmp) → `POST /api/learning/analyze` agrega medias por clave (básicos + creativos) con stats{mean,min,max,count} y resumen en español. Guardar/activar/eliminar perfiles personales: `personal_profiles` + endpoints GET/POST/PATCH(activate)/DELETE `/api/learning/profiles`. Primer perfil se activa solo; activación exclusiva por usuario; scoping por user_id.
+- Dashboard: tarjetas de proyecto con barra de progreso + "X fotografías · estado" (etiqueta localizada).
+- NOTA: aplicar el perfil personal aprendido al motor de auto-tono queda como P2 (tarea futura); por ahora el módulo es aditivo y no toca el motor existente.
+- Verificado: testing_agent iteración 12 — backend 18/18 pytest OK (CRUD + scoping cross-user + regresión), frontend 100% flujos críticos (nav, /styles, /learning upload→analyze→save→activate→delete, tarjeta dashboard). Sin bugs.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 12 — full-stack testing of RAW AI Learning module + new /styles page + Dashboard progress card + regression on existing endpoints. Backend: 18/18 pytest tests pass on the public preview URL. Frontend: session cookie injected in Playwright, dashboard project card renders status pill + progress bar + 'X fotografías · estado', nav buttons (Proyectos/Estilos/Aprendizaje/Perfiles) navigate correctly with active emerald highlight, /styles renders PhotographerStyles component, /learning uploads XMP files → shows 'Tu firma de revelado' summary + basic (8) + creative (3) tendency grids, save+activate+delete personal profile flow works.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard project card", "issues": ["Status text is rendered as the raw English status key ('created'/'processing'/'completed') in 'X fotografías · estado' — the pill above already shows the localized Spanish label ('Nuevo'/'En proceso'/'Completado'); the inline text should use the localized STATUS[p.status].label instead of p.status for consistency in the Spanish UI."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration12_learning.py",
+    "/app/test_reports/pytest/iteration12_learning.xml"
+  ],
+  "action_items": [
+    "Minor UI polish: in /app/frontend/src/pages/Dashboard.jsx line ~83, replace `{p.status}` with `{st.label}` inside the 'X fotografías · estado' subtitle so the status text is displayed in Spanish and matches the pill.",
+    "Non-blocking: server.py is now 1242 lines — consider splitting learning + extractor + xmp helpers into modules (already flagged in iteration_11)."
+  ],
+  "critical_code_review_comments": [
+    "learning_analyze correctly returns 400 on empty samples, aggregates per key with mean/min/max/count, buckets into basic vs creative, and rounds exposure to 2 decimals and others to int — matches spec.",
+    "create_personal_profile: 'first profile becomes active=true' logic uses count_documents on user's profiles — correct and race-safe enough for a single-user usage pattern.",
+    "activate_personal_profile deactivates all others then activates target atomically enough (two sequential updates) — acceptable; would be safer in a transaction but not critical.",
+    "Per-user scoping verified: user B cannot see user A's profiles (listing filtered by user_id).",
+    "Delete returns 404 for unknown ids — correct.",
+    "Dashboard.jsx renders status via localized STATUS map for the pill but leaks the raw English key in the subtitle — cosmetic bug (see design_issues)."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "100% (18/18)", "frontend": "100% (all critical flows verified)" },
+  "test_credentials": "Seeded two ephemeral users + sessions in test_database (TOKEN_A/TOKEN_B). Cleaned up after run.",
+  "seed_data_creation": "Inserted 2 users + 2 sessions; created 1 project (TEST_UI_iter12) and 1 personal profile (TEST_UI_profile) via UI, then deleted via UI/DB cleanup. Backend tests also created + deleted TEST_-prefixed personal profiles and a TEST_iter12_proj project.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration12_learning.py expects TOKEN_A/TOKEN_B env vars (seed via /app/memory/test_credentials.md snippet). It uses class-based scheduling with pytest-xdist loadscope so all tests in TestPersonalProfiles run on the same worker (needed because they share a module-level _created_ids list). If refactoring, keep them in the same class or pass -n 0. Playwright must add session_token cookie for domain ai-xmp-gen.preview.emergentagent.com BEFORE navigating to any /dashboard route.",
+  "verified_behavior": {
+    "learning_analyze": "200 with samples count, basic{}, creative{}, per-key stats{mean,min,max,count}, Spanish summary. 400 on empty samples. 401 unauth.",
+    "personal_profiles_crud": "First profile for user auto-activates. Second stays inactive. PATCH /activate flips exclusive-active. Listing scoped per user (user B does not see user A profiles). DELETE 404 on unknown id.",
+    "regression": "GET /projects, POST /projects + GET/DELETE persistence, GET /photographer-styles, POST /selection/analyze (with & without files) all still working.",
+    "frontend_nav": "AppShell renders 4 nav buttons (nav-dashboard-btn, nav-styles-btn, nav-learning-btn, nav-profiles-btn); active button gets emerald-400/40 border+bg+text classes.",
+    "frontend_learning": "XMP upload → parseXmp extracts crs:Exposure2012/Contrast2012/... → POST /learning/analyze → summary + 8 basic + 3 creative tendency cells rendered; save-btn creates profile card with activate/delete controls.",
+    "frontend_styles": "/styles renders style-library container hosting PhotographerStyles component.",
+    "frontend_dashboard_card": "project-card-{id} shows Spanish status pill ('Nuevo'), subtitle 'X fotografías · created' (raw key — minor bug), and progress bar div with computed width."
+  }
+}

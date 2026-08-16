@@ -9,6 +9,8 @@ import Dashboard from "@/pages/Dashboard";
 import Studio from "@/pages/Studio";
 import ProcessingPage from "@/pages/ProcessingPage";
 import ProfileExtractor from "@/pages/ProfileExtractor";
+import StyleLibrary from "@/pages/StyleLibrary";
+import LearningModule from "@/pages/LearningModule";
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -34,6 +36,8 @@ function AppRouter() {
       <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
       <Route path="/processing" element={<ProtectedRoute><ProcessingPage /></ProtectedRoute>} />
       <Route path="/profiles" element={<ProtectedRoute><ProfileExtractor /></ProtectedRoute>} />
+      <Route path="/styles" element={<ProtectedRoute><StyleLibrary /></ProtectedRoute>} />
+      <Route path="/learning" element={<ProtectedRoute><LearningModule /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

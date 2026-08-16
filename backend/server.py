@@ -815,6 +815,137 @@ async def analyze_selection(req: SelectionRequest, user: User = Depends(get_curr
     return compute_selection(req.files)
 
 
+# ----------------------------- RAW AI Learning (aprendizaje de mis correcciones) -----------------------------
+LEARN_BASIC_KEYS = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "temperature", "tint"]
+LEARN_CREATIVE_KEYS = ["clarity", "vibrance", "saturation"]
+LEARN_ALL_KEYS = LEARN_BASIC_KEYS + LEARN_CREATIVE_KEYS
+
+_LEARN_LABELS = {
+    "exposure": "la exposición", "contrast": "el contraste", "highlights": "las altas luces",
+    "shadows": "las sombras", "whites": "los blancos", "blacks": "los negros",
+    "temperature": "la temperatura", "tint": "el tinte",
+    "clarity": "la claridad", "vibrance": "la vibración", "saturation": "la saturación",
+}
+
+
+class PersonalProfile(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    name: str
+    samples: int = 0
+    basic: Dict[str, float] = Field(default_factory=dict)
+    creative: Dict[str, float] = Field(default_factory=dict)
+    stats: Dict[str, Any] = Field(default_factory=dict)
+    active: bool = False
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class LearnAnalyzeRequest(BaseModel):
+    samples: List[Dict[str, float]] = Field(default_factory=list)
+
+
+class PersonalProfileCreate(BaseModel):
+    name: str
+    samples: List[Dict[str, float]] = Field(default_factory=list)
+
+
+def _learn_round(v, key):
+    return round(v, 2) if key == "exposure" else round(v)
+
+
+def aggregate_learning(samples):
+    stats, basic, creative = {}, {}, {}
+    for key in LEARN_ALL_KEYS:
+        vals = [float(s[key]) for s in samples if key in s and s[key] is not None]
+        if not vals:
+            continue
+        mean = sum(vals) / len(vals)
+        stats[key] = {"mean": round(mean, 2), "min": round(min(vals), 2), "max": round(max(vals), 2), "count": len(vals)}
+        target = basic if key in LEARN_BASIC_KEYS else creative
+        target[key] = _learn_round(mean, key)
+    return stats, basic, creative
+
+
+def learning_summary(basic, creative, n):
+    merged = {**basic, **creative}
+    notable = []
+    for key in LEARN_ALL_KEYS:
+        if key not in merged:
+            continue
+        val = merged[key]
+        label = _LEARN_LABELS.get(key, key)
+        if key == "exposure":
+            if abs(val) >= 0.05:
+                notable.append(f"ajustas {label} {val:+.2f} EV de media")
+        elif key == "temperature":
+            if val > 5600:
+                notable.append("prefieres un balance más cálido")
+            elif val < 5400:
+                notable.append("prefieres un balance más frío")
+        else:
+            if abs(val) >= 3:
+                verb = "subes" if val > 0 else "bajas"
+                notable.append(f"{verb} {label} ({val:+.0f})")
+    if not notable:
+        return f"Tus {n} correcciones son muy neutras: apenas te desvías de la base automática."
+    return f"En tus {n} correcciones sueles: " + ", ".join(notable[:5]) + "."
+
+
+@api_router.post("/learning/analyze")
+async def learning_analyze(req: LearnAnalyzeRequest, user: User = Depends(get_current_user)):
+    if not req.samples:
+        raise HTTPException(status_code=400, detail="No hay correcciones para analizar")
+    stats, basic, creative = aggregate_learning(req.samples)
+    return {
+        "samples": len(req.samples),
+        "basic": basic,
+        "creative": creative,
+        "stats": stats,
+        "summary": learning_summary(basic, creative, len(req.samples)),
+    }
+
+
+@api_router.get("/learning/profiles", response_model=List[PersonalProfile])
+async def list_personal_profiles(user: User = Depends(get_current_user)):
+    docs = await db.personal_profiles.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [PersonalProfile(**d) for d in docs]
+
+
+@api_router.post("/learning/profiles", response_model=PersonalProfile)
+async def create_personal_profile(payload: PersonalProfileCreate, user: User = Depends(get_current_user)):
+    if not payload.samples:
+        raise HTTPException(status_code=400, detail="No hay correcciones para aprender")
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="El nombre es obligatorio")
+    stats, basic, creative = aggregate_learning(payload.samples)
+    existing = await db.personal_profiles.count_documents({"user_id": user.user_id})
+    profile = PersonalProfile(
+        user_id=user.user_id, name=payload.name.strip(), samples=len(payload.samples),
+        basic=basic, creative=creative, stats=stats, active=(existing == 0),
+    )
+    await db.personal_profiles.insert_one(profile.model_dump())
+    return profile
+
+
+@api_router.patch("/learning/profiles/{profile_id}/activate", response_model=PersonalProfile)
+async def activate_personal_profile(profile_id: str, user: User = Depends(get_current_user)):
+    doc = await db.personal_profiles.find_one({"id": profile_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    await db.personal_profiles.update_many({"user_id": user.user_id}, {"$set": {"active": False}})
+    await db.personal_profiles.update_one({"id": profile_id, "user_id": user.user_id}, {"$set": {"active": True}})
+    doc["active"] = True
+    return PersonalProfile(**doc)
+
+
+@api_router.delete("/learning/profiles/{profile_id}")
+async def delete_personal_profile(profile_id: str, user: User = Depends(get_current_user)):
+    res = await db.personal_profiles.delete_one({"id": profile_id, "user_id": user.user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Perfil no encontrado")
+    return {"ok": True}
+
+
 @api_router.get("/")
 async def root():
     return {"message": "RAW AI Studio API"}

@@ -79,10 +79,12 @@ export default function Dashboard() {
                   </button>
                 </div>
                 <h3 className="font-display mt-3 text-lg font-semibold text-zinc-100">{p.name}</h3>
-                {p.client_name && <p className="text-sm text-zinc-500">{p.client_name}</p>}
-                <div className="mt-4 flex items-center gap-4 text-xs text-zinc-500">
-                  {p.event_date && <span className="inline-flex items-center gap-1"><Calendar className="h-3.5 w-3.5" />{p.event_date}</span>}
-                  <span className="inline-flex items-center gap-1"><ImageIcon className="h-3.5 w-3.5" />{p.processed_images}/{p.total_images}</span>
+                <p className="mt-1 text-sm text-zinc-500">
+                  {p.total_images} fotografías · {st.label}
+                </p>
+                <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                  <div className="h-full rounded-full bg-white transition-all duration-500"
+                    style={{ width: `${p.total_images ? Math.round((p.processed_images / p.total_images) * 100) : (p.status === "completed" ? 100 : 0)}%` }} />
                 </div>
                 <div className="mt-4 flex items-center gap-1.5 text-sm font-medium text-emerald-400 opacity-0 transition-opacity group-hover:opacity-100">
                   Abrir estudio <ArrowRight className="h-4 w-4" />
