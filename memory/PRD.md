@@ -85,6 +85,15 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - NOTA: aplicar el perfil personal aprendido al motor de auto-tono queda como P2 (tarea futura); por ahora el módulo es aditivo y no toca el motor existente.
 - Verificado: testing_agent iteración 12 — backend 18/18 pytest OK (CRUD + scoping cross-user + regresión), frontend 100% flujos críticos (nav, /styles, /learning upload→analyze→save→activate→delete, tarjeta dashboard). Sin bugs.
 
+### Iteración 13 (2026-08-16): Motor de ajustes básicos v2 (dos capas, sin IA/coste) + Laboratorio de comparación
+- Nuevo motor determinista en `src/lib/rawaistudio/`:
+  - `photometricAnalysis.js` (capa técnica): percentiles p1/p5/p50/p95/p99, clipping luces/sombras, **medición ponderada al centro** (fotómetro real, prioriza al sujeto) y **clasificación de escena sin IA** (high_key / low_key / backlit / flash / normal) derivada de la fotometría.
+  - `exposureEngine.js` (capa de revelado): traduce fotometría → básicos (exposure/contrast/highlights/shadows/whites/blacks) con **modos de precisión con topes reales**: Conservador ±0.35EV/±20, Equilibrado ±0.6EV/±35 (default), Agresivo ±1.0EV/±55, con banda de mediana objetivo por modo. Ajustes contextuales por escena (contraluz abre sombras, clave alta protege luces, flash/clave baja preservan intención).
+- Página **Laboratorio del motor** (`/engine-lab`, nav "Motor", beta): elige carpeta → muestra de 24 fotos → compara valor **antiguo (`autoToneFromHistogram`) vs nuevo v2** por foto, con conmutador de modo en vivo y etiqueta de escena. 100% local, los RAW no se modifican. El motor actual NO se ha sustituido todavía (a validar por el usuario antes de reemplazar).
+- Nav ampliada: Proyectos · Estilos · Aprendizaje · Motor · Perfiles (+ menú móvil en el avatar).
+- Verificado: jest 8/8 del nuevo motor (oscura→+EV, clara→−EV, topes por modo, contraluz→+sombras, clave alta no sobreexpone, degenerados no rompen). Compila y renderiza OK.
+- PENDIENTE (tras validación): sustituir `autoToneFromHistogram` por el motor v2 en el flujo del estudio y cloud, y aplicar el modo de precisión elegido por foto.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

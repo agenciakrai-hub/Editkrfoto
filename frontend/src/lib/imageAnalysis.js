@@ -3,6 +3,8 @@
 // NITIDEZ (enfoque) y EXPOSICIÓN. El agrupado/selección vive en selectionLogic (puro).
 import { extractPreviewBlob } from "@/lib/rawThumb";
 import { autoToneFromHistogram } from "@/lib/selectionLogic";
+import { computePhotometrics } from "@/lib/rawaistudio/photometricAnalysis";
+import { computeBasic } from "@/lib/rawaistudio/exposureEngine";
 export { groupAndSelect, hamming, autoToneFromHistogram, PHASH_THRESHOLD, AMBIGUOUS_MARGIN } from "@/lib/selectionLogic";
 
 async function bitmapFromFile(file) {
@@ -79,6 +81,49 @@ export async function analyzeFile(file) {
   const bmp = await bitmapFromFile(file);
   if (!bmp) return null;
   try { return metricsFromBitmap(bmp); }
+  catch { return null; }
+  finally { if (bmp.close) bmp.close(); }
+}
+
+// --- Motor v2 (laboratorio): histograma global + PONDERADO AL CENTRO para comparar ---
+function labMetricsFromBitmap(bmp, mode = "balanced") {
+  const w = Math.min(256, bmp.width) || 256;
+  const h = Math.max(1, Math.round(w * (bmp.height / bmp.width)));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+
+  const histGlobal = new Array(256).fill(0);
+  const histCenter = new Array(256).fill(0);
+  let totalCenter = 0;
+  const cx = (w - 1) / 2, cy = (h - 1) / 2;
+  const sigma = 0.42; // fracción del radio para la ponderación gaussiana
+  const maxD = Math.hypot(cx, cy) || 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const g = Math.min(255, (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) | 0);
+      histGlobal[g] += 1;
+      const dist = Math.hypot(x - cx, y - cy) / maxD;
+      const wgt = Math.exp(-(dist * dist) / (2 * sigma * sigma));
+      histCenter[g] += wgt;
+      totalCenter += wgt;
+    }
+  }
+  const totalGlobal = w * h;
+  const photometrics = computePhotometrics({ histGlobal, totalGlobal, histCenter, totalCenter });
+  const oldBasic = autoToneFromHistogram(histGlobal, totalGlobal);
+  const newBasic = computeBasic(photometrics, mode);
+  return { photometrics, oldBasic, newBasic };
+}
+
+// Analiza una foto para el laboratorio de comparación (motor antiguo vs v2).
+export async function analyzeFileForLab(file, mode = "balanced") {
+  const bmp = await bitmapFromFile(file);
+  if (!bmp) return null;
+  try { return labMetricsFromBitmap(bmp, mode); }
   catch { return null; }
   finally { if (bmp.close) bmp.close(); }
 }
