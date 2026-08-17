@@ -45,6 +45,7 @@ export default function PresetParamsStep({ count, onContinue }) {
   const [showSave, setShowSave] = useState(false);
   const fileRef = useRef(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial de perfiles (solo al montar)
   useEffect(() => { api.get("/style-profiles").then((r) => setProfiles(r.data)).catch(() => {}); }, []);
 
   const pickPreset = (preset) => { setConfig(applyPreset(defaultParameterConfig(), preset)); setPresetName(preset.name); setPresetXmpText(null); };

@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 13 — regression pass after presentational refactors (StyleCard/StyleComparePanel/PhotoCard/SelectionProgress extractions) and backend _parse_profile split. Backend: 21/21 pytest tests pass on preview URL against real Mongo session. Frontend: /dashboard, /auto-basic, /styles, /learning, /engine-lab, /profiles all render with 0 console errors; top-nav navigates correctly with emerald active highlight; /styles PhotographerStyles component mounts and exposes style-name-input, style-url-input, analyze-style-btn.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration13_regression.py",
+    "/app/test_reports/pytest/iteration13.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "_parse_profile refactor is clean: _parse_xmp_profile and _parse_lrtemplate_profile share the prof dict; dcp and unknown branches remain inline in the dispatcher; behavior verified via analyze/html + unreachable-URL tests.",
+    "analyze_url now always initializes profiles=[] before conditional branches — the previously flagged 'unbound local' risk is gone. Unreachable URL returns structured 400 with 'detail', not 500.",
+    "PhotographerStyles.jsx correctly delegates to StyleCard + StyleComparePanel; data-testids preserved (photographer-styles, style-name-input, style-url-input, analyze-style-btn, compare-toggle-btn).",
+    "server.py is 1251 lines — recommend module split (already flagged in prior iterations); non-blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration13_regression.py"
+  ],
+  "success_rate": { "backend": "100% (21/21)", "frontend": "100% (all 6 routes rendered, nav works, styles inputs present)" },
+  "test_credentials": "Seeded ephemeral user + session (test_session_iter13_1786962131795) in test_database and cleaned up after run.",
+  "seed_data_creation": "1 user + 1 session created and deleted. Backend tests created + deleted TEST_iter13_proj, TEST_iter13_style, TEST_iter13_profile.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration13_regression.py requires TOKEN_A + REACT_APP_BACKEND_URL env vars. Seed via /app/memory/test_credentials.md. Uses -o addopts='' to disable xdist because the tests rely on shared class-level state (_pid) across sequential tests. Frontend tests use domain ai-xmp-gen.preview.emergentagent.com for the session_token cookie.",
+  "verified_behavior": {
+    "projects": "GET /api/projects list, POST create, GET by id, DELETE — all 200 and persisted.",
+    "photographer_styles": "GET list, POST (requires {name, gallery_url}), GET by id, DELETE — all 200; DELETE removes and subsequent GET returns 404.",
+    "selection": "POST /api/selection/analyze — empty files → 400 'No hay archivos para analizar'; with FileMeta list → 200 with photos/total/bursts/selected/time_reliable.",
+    "learning": "POST /learning/analyze aggregates stats/basic/creative correctly; empty samples → 400. Personal profile CRUD (create/list/activate/delete) works; first profile auto-active.",
+    "generate_xmp": "POST /api/projects/{id}/generate-xmp with photos[{filename,basic}] returns application/zip containing IMG_0001.xmp, IMG_0002.xmp; XMP body includes xmlns:crs; project status flips to 'completed'.",
+    "profile_extractor": "GET /profiles returns list; POST /analyze against unreachable URL returns 400 with detail (not 500) — confirms _parse_profile refactor did not regress; POST /analyze against https://example.com/ returns 200 with found+profiles keys.",
+    "frontend_routes": "All 6 routes (/dashboard, /auto-basic, /styles, /learning, /engine-lab, /profiles) load with 0 console errors; nav-*-btn testids present; clicking nav-styles-btn navigates to /styles and applies emerald-400/40 active classes."
+  }
+}

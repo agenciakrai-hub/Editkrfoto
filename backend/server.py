@@ -1030,29 +1030,37 @@ def _ext_of(url):
     return path.rsplit(".", 1)[-1] if "." in path else ""
 
 
+def _parse_xmp_profile(prof, text):
+    m = re.search(r'crs:CameraProfile="([^"]+)"', text)
+    n = re.search(r'crs:Name="([^"]+)"', text) or re.search(r'<crs:Name>.*?<rdf:li[^>]*>([^<]+)</rdf:li>', text, re.S)
+    make = re.search(r'tiff:Make="([^"]+)"', text)
+    model = re.search(r'tiff:Model="([^"]+)"', text)
+    prof["name"] = (m.group(1) if m else (n.group(1) if n else "")).strip()
+    prof["display_name"] = prof["name"]
+    prof["manufacturer"] = make.group(1).strip() if make else ""
+    prof["camera_model"] = model.group(1).strip() if model else ""
+    prof["profile_type"] = "camera_profile" if m else ("preset" if re.search(r'crs:(Exposure2012|ToneCurve|Look)', text) else "xmp")
+    prof["compatible"] = "yes" if (m or n) else "documented"
+
+
+def _parse_lrtemplate_profile(prof, text):
+    t = re.search(r'title\s*=\s*"([^"]+)"', text)
+    internal = re.search(r'internalName\s*=\s*"([^"]+)"', text)
+    prof["name"] = (t.group(1) if t else (internal.group(1) if internal else "")).strip()
+    prof["display_name"] = prof["name"]
+    prof["profile_type"] = "lrtemplate"
+    prof["compatible"] = "yes" if (t or internal) else "documented"
+
+
 def _parse_profile(content, ext, url):
     text = content.decode("utf-8", errors="ignore")
     prof = {"name": "", "display_name": "", "manufacturer": "", "camera_model": "",
             "profile_type": "", "format": ext, "source_url": url, "download_url": url,
             "compatible": "unknown", "metadata": {}, "status": "new"}
     if ext == "xmp":
-        m = re.search(r'crs:CameraProfile="([^"]+)"', text)
-        n = re.search(r'crs:Name="([^"]+)"', text) or re.search(r'<crs:Name>.*?<rdf:li[^>]*>([^<]+)</rdf:li>', text, re.S)
-        make = re.search(r'tiff:Make="([^"]+)"', text)
-        model = re.search(r'tiff:Model="([^"]+)"', text)
-        prof["name"] = (m.group(1) if m else (n.group(1) if n else "")).strip()
-        prof["display_name"] = prof["name"]
-        prof["manufacturer"] = make.group(1).strip() if make else ""
-        prof["camera_model"] = model.group(1).strip() if model else ""
-        prof["profile_type"] = "camera_profile" if m else ("preset" if re.search(r'crs:(Exposure2012|ToneCurve|Look)', text) else "xmp")
-        prof["compatible"] = "yes" if (m or n) else "documented"
+        _parse_xmp_profile(prof, text)
     elif ext == "lrtemplate":
-        t = re.search(r'title\s*=\s*"([^"]+)"', text)
-        internal = re.search(r'internalName\s*=\s*"([^"]+)"', text)
-        prof["name"] = (t.group(1) if t else (internal.group(1) if internal else "")).strip()
-        prof["display_name"] = prof["name"]
-        prof["profile_type"] = "lrtemplate"
-        prof["compatible"] = "yes" if (t or internal) else "documented"
+        _parse_lrtemplate_profile(prof, text)
     elif ext == "dcp":
         prof["profile_type"] = "camera_profile"
         prof["compatible"] = "yes"  # DCP es un perfil de cámara real de Lightroom

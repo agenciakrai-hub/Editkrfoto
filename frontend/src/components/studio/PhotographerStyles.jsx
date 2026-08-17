@@ -1,15 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { toast } from "sonner";
-import { Globe, Sparkles, Loader2, Trash2, Check, AlertTriangle, Palette, Scissors, Download, ArrowLeftRight } from "lucide-react";
+import { Globe, Sparkles, Loader2, ArrowLeftRight } from "lucide-react";
 import { buildStyleXmp } from "@/lib/xmp/buildXmp";
+import StyleComparePanel from "@/components/studio/StyleComparePanel";
+import StyleCard from "@/components/studio/StyleCard";
 import api from "@/lib/api";
-
-function StatusPill({ status }) {
-  if (status === "ready") return <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/10 px-2 py-0.5 text-[10px] font-medium text-emerald-300"><Check className="h-3 w-3" /> Listo</span>;
-  if (status === "failed") return <span className="inline-flex items-center gap-1 rounded-full bg-rose-400/10 px-2 py-0.5 text-[10px] font-medium text-rose-300"><AlertTriangle className="h-3 w-3" /> Error</span>;
-  return <span className="inline-flex items-center gap-1 rounded-full bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium text-amber-300"><Loader2 className="h-3 w-3 animate-spin" /> Analizando</span>;
-}
 
 export default function PhotographerStyles({ onUseStyle, activeName }) {
   const [profiles, setProfiles] = useState([]);
@@ -103,115 +99,16 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
           </div>
         )}
 
-        {compareMode && readyProfiles.length >= 2 && (() => {
-          const a = readyProfiles.find((p) => p.id === cmp[0]) || readyProfiles[0];
-          const b = readyProfiles.find((p) => p.id === cmp[1]) || readyProfiles[1];
-          const rows = [
-            ["Balance de blancos", a.color_profile?.white_balance_tendency, b.color_profile?.white_balance_tendency],
-            ["Contraste", a.color_profile?.contrast, b.color_profile?.contrast],
-            ["Saturación", a.color_profile?.saturation, b.color_profile?.saturation],
-            ["Tono de piel", a.color_profile?.skin_tone, b.color_profile?.skin_tone],
-            ["Rango tonal", a.color_profile?.tonal_range, b.color_profile?.tonal_range],
-            ["Recorte", a.edit_profile?.crop_style, b.edit_profile?.crop_style],
-            ["Luz / sombra", a.edit_profile?.light_shadow_treatment, b.edit_profile?.light_shadow_treatment],
-            ["Nitidez", a.edit_profile?.sharpening_look, b.edit_profile?.sharpening_look],
-            ["Consistencia", a.edit_profile?.consistency, b.edit_profile?.consistency],
-            ["Confianza", a.confidence != null ? `${Math.round(a.confidence)}%` : "-", b.confidence != null ? `${Math.round(b.confidence)}%` : "-"],
-          ];
-          const Sel = ({ i }) => (
-            <select data-testid={`compare-select-${i}`} value={cmp[i]} onChange={(e) => setCmp((c) => (i === 0 ? [e.target.value, c[1]] : [c[0], e.target.value]))}
-              className="w-full rounded-md border border-zinc-700 bg-[#101012] px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-emerald-400/60">
-              {readyProfiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          );
-          return (
-            <div className="mt-4 rounded-xl border border-zinc-800 bg-[#101012] p-4" data-testid="compare-panel">
-              <div className="grid grid-cols-2 gap-3">
-                {[a, b].map((p, i) => (
-                  <div key={`${p.id}-${i}`}>
-                    <Sel i={i} />
-                    <img src={p.representative_image} alt={p.name} className="mt-2 aspect-[3/2] w-full rounded-lg object-cover" />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 overflow-hidden rounded-lg border border-zinc-800">
-                {rows.map(([label, va, vb], idx) => (
-                  <div key={label} className={`grid grid-cols-[1fr_1.4fr_1.4fr] gap-2 px-3 py-2 text-[11px] ${idx % 2 ? "bg-[#141418]" : "bg-[#1c1c22]"}`}>
-                    <span className="text-zinc-500">{label}</span>
-                    <span className="text-zinc-300">{va || "—"}</span>
-                    <span className="text-zinc-300">{vb || "—"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
+        {compareMode && readyProfiles.length >= 2 && (
+          <StyleComparePanel readyProfiles={readyProfiles} cmp={cmp} setCmp={setCmp} />
+        )}
 
         {profiles.length > 0 && (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {profiles.map((p) => {
-              const active = activeName === p.name;
-              const clickable = p.status === "ready";
-              return (
-                <div key={p.id} data-testid={`style-card-${p.id}`}
-                  onClick={() => clickable && onUseStyle?.(p)}
-                  className={`rounded-xl border p-4 transition-all duration-200 ${clickable ? "cursor-pointer" : ""}
-                    ${active ? "border-emerald-400/70 ring-2 ring-emerald-400/30 bg-emerald-400/[0.05]" : "border-zinc-800 bg-[#1c1c22] hover:border-zinc-600"}`}>
-                  <div className="flex gap-3">
-                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-zinc-900">
-                      {p.representative_image
-                        ? <img src={p.representative_image} alt={p.name} className="h-full w-full object-cover" />
-                        : <div className="flex h-full w-full items-center justify-center text-zinc-700"><Globe className="h-5 w-5" /></div>}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-medium text-zinc-100">{p.name}</p>
-                        <button data-testid={`delete-style-${p.id}`} onClick={(e) => remove(p.id, e)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <StatusPill status={p.status} />
-                        {p.status === "ready" && p.confidence != null && (
-                          <span className="font-mono text-[10px] text-zinc-500">{Math.round(p.confidence)}% confianza · {p.images_analyzed} img</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {p.status === "ready" && (
-                    <>
-                      {p.gallery_images?.length > 1 && (
-                        <div className="mt-3 flex gap-1.5 overflow-x-auto" data-testid={`style-gallery-${p.id}`}>
-                          {p.gallery_images.slice(0, 8).map((src, idx) => (
-                            <img key={src} src={src} alt={`ref ${idx + 1}`} className="h-12 w-12 shrink-0 rounded-md object-cover ring-1 ring-zinc-800" />
-                          ))}
-                        </div>
-                      )}
-                      {p.description && <p className="mt-3 text-xs leading-5 text-zinc-400">{p.description}</p>}
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <div className="rounded-lg border border-zinc-800 bg-[#101012] p-2.5">
-                          <p className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500"><Palette className="h-3 w-3 text-emerald-400" /> Color</p>
-                          <p className="mt-1 text-[11px] leading-4 text-zinc-400">{p.color_profile?.summary || `${p.color_profile?.contrast || "-"} · ${p.color_profile?.saturation || "-"} · piel ${p.color_profile?.skin_tone || "-"}`}</p>
-                        </div>
-                        <div className="rounded-lg border border-zinc-800 bg-[#101012] p-2.5">
-                          <p className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500"><Scissors className="h-3 w-3 text-emerald-400" /> Edición</p>
-                          <p className="mt-1 text-[11px] leading-4 text-zinc-400">{p.edit_profile?.summary || `${p.edit_profile?.crop_style || "-"} · consistencia ${p.edit_profile?.consistency || "-"}`}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex items-center justify-between gap-2">
-                        {active
-                          ? <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400"><Check className="h-3.5 w-3.5" /> Estilo de referencia seleccionado</p>
-                          : <p className="text-[11px] text-zinc-600">Toca para usar como estilo de referencia</p>}
-                        <button data-testid={`export-style-${p.id}`} onClick={(e) => exportXmp(p, e)}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-zinc-700 px-2.5 py-1 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800">
-                          <Download className="h-3 w-3" /> Exportar .xmp
-                        </button>
-                      </div>
-                    </>
-                  )}
-                  {p.status === "failed" && <p className="mt-3 text-xs text-rose-400">{p.error_message || "No se pudo analizar la galería."}</p>}
-                </div>
-              );
-            })}
+            {profiles.map((p) => (
+              <StyleCard key={p.id} p={p} active={activeName === p.name}
+                onUse={onUseStyle} onDelete={remove} onExport={exportXmp} />
+            ))}
           </div>
         )}
       </div>

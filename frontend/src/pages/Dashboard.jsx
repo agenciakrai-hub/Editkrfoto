@@ -20,6 +20,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const load = () => api.get("/projects").then((r) => setProjects(r.data)).finally(() => setLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial (solo al montar)
   useEffect(() => { load(); }, []);
 
   const create = async (e) => {

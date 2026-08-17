@@ -135,6 +135,20 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - REVISADO y NO cambiado (falsos positivos): los `is None`/`is not None` del backend (líneas 188/293/411/790/859) son el idioma CORRECTO de Python; cambiarlos a `==` sería un anti-patrón. Catch "vacíos" en LearningModule/faceEngine son *skips* intencionados y ya llevan comentario + fallback.
 - DIFERIDO (riesgo de regresión sobre código probado, ya anotado en handoff): refactor de complejidad de componentes (ReviewStep/PhotographerStyles/PresetParamsStep/SelectionStep) y `_parse_profile`/`analyze_photographer_style`; y los cambios masivos de dependencias de hooks (efectos de montaje intencionados).
 
+### Iteración 19 (2026-08-16): Aplicadas correcciones de la revisión de código
+- Hooks: añadido `eslint-disable-next-line react-hooks/exhaustive-deps` con motivo a los efectos de montaje intencionados (Dashboard, ProfileExtractor, LearningModule, PresetParamsStep, SelectionStep, Studio). AuthContext ya era correcto (useCallback/useMemo con deps válidas). Sin cambios de comportamiento.
+- LearningModule: `ALL_KEYS` hoisted a scope de módulo (evita recrear el array en cada render).
+- Backend: `_parse_profile` refactorizado en helpers `_parse_xmp_profile` / `_parse_lrtemplate_profile` (menos complejidad). Verificado idéntico en XMP/lrtemplate/dcp/fallback.
+- Frontend: `PhotographerStyles` descompuesto → `StyleComparePanel` (IIFE de comparación) + `StyleCard` (+ StatusPill). Renderiza OK.
+- Falsos positivos confirmados y NO tocados: `is None`/`is not None` (idioma correcto Python); catch intencionados con comentario.
+- PENDIENTE (opcional, refactor de complejidad en flujos entrelazados no auto-testeables sin subir RAW real): descomposición de `ReviewStep`/`SelectionStep`/`PresetParamsStep` y de `analyze_photographer_style`/`compute_selection`. Se dejan para una pasada dedicada con pruebas de regresión.
+
+### Iteración 20 (2026-08-16): Más refactors de complejidad (verificados en regresión)
+- `ReviewStep` → extrae `PhotoCard`. `SelectionStep` → extrae `SelectionProgress`. (Junto a StyleCard/StyleComparePanel de la iter. 19).
+- Regresión testing_agent (iteration_13.json): backend 21/21, frontend 6/6 rutas renderizan, sin issues, sin errores de consola, retest_needed=false. Comportamiento idéntico confirmado.
+- HECHO de la revisión de código: bug `profiles` (blindado), hooks (eslint-disable con motivo), `_parse_profile` (helpers), console.warn (dev-gate), ALL_KEYS (hoist), y complejidad de PhotographerStyles/ReviewStep/SelectionStep reducida.
+- PENDIENTE (Important, no crítico): `PresetParamsStep` y backend `analyze_photographer_style`/`compute_selection` — funciones con lógica/estado entrelazado; se dejan para una pasada dedicada con pruebas.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

@@ -9,6 +9,7 @@ import { Brain, Upload, Loader2, Save, Trash2, Star, FileText, X, Sparkles } fro
 const DEF = Object.fromEntries(PARAM_DEFS.map((p) => [p.key, p]));
 const BASIC_KEYS = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "temperature", "tint"];
 const CREATIVE_KEYS = ["clarity", "vibrance", "saturation"];
+const ALL_KEYS = [...BASIC_KEYS, ...CREATIVE_KEYS];
 
 function fmt(key, v) {
   if (v == null) return "—";
@@ -42,6 +43,7 @@ export default function LearningModule() {
   const fileRef = useRef(null);
 
   const loadProfiles = () => api.get("/learning/profiles").then((r) => setProfiles(r.data)).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial (solo al montar)
   useEffect(() => { loadProfiles(); }, []);
 
   const runAnalysis = async (allSamples) => {
@@ -211,7 +213,7 @@ export default function LearningModule() {
                   <button data-testid={`delete-personal-${p.id}`} onClick={() => removeProfile(p.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {[...BASIC_KEYS, ...CREATIVE_KEYS].filter((k) => (p.basic?.[k] ?? p.creative?.[k]) != null).slice(0, 6).map((k) => (
+                  {ALL_KEYS.filter((k) => (p.basic?.[k] ?? p.creative?.[k]) != null).slice(0, 6).map((k) => (
                     <span key={k} className="rounded-md bg-zinc-800/60 px-2 py-0.5 font-mono text-[10px] text-zinc-400">
                       {DEF[k]?.label || k} {fmt(k, p.basic?.[k] ?? p.creative?.[k])}
                     </span>

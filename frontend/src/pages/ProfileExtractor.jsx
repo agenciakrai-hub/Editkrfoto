@@ -18,6 +18,7 @@ export default function ProfileExtractor() {
   const [saved, setSaved] = useState([]);
 
   const loadSaved = () => api.get("/profile-extractor/profiles").then((r) => setSaved(r.data)).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial (solo al montar)
   useEffect(() => { loadSaved(); }, []);
 
   const analyze = async () => {

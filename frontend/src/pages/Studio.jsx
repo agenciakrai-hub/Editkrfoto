@@ -40,6 +40,7 @@ export default function Studio() {
       if (r.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}`); return; }
       setProject(r.data);
     }).catch(() => navigate("/dashboard"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- carga el proyecto al abrir/ cambiar de id
   }, [projectId, navigate]);
 
   const persist = async (patch) => {

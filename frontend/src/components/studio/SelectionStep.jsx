@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Sparkles, ArrowRight, Layers, CheckCircle2, Images, ScanFace, Users, User, AlertTriangle } from "lucide-react";
+import { ArrowRight, Layers, CheckCircle2, Images, ScanFace, Users, User, AlertTriangle } from "lucide-react";
 import { SAMPLE_THUMBS } from "@/lib/rawSelection";
 import { analyzeFile, groupAndSelect, mapLimit } from "@/lib/imageAnalysis";
 import { applyFaceLayer } from "@/lib/faceEngine";
+import SelectionProgress from "@/components/studio/SelectionProgress";
 
 const DEFAULT_BASIC = { exposure: 0.1, contrast: 0, highlights: -15, shadows: 15, whites: 5, blacks: -5 };
 
@@ -54,6 +55,7 @@ export default function SelectionStep({ files, onContinue }) {
       }
     })();
     return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reanaliza solo cuando cambian los archivos
   }, [files]);
 
   if (error) {
@@ -65,26 +67,7 @@ export default function SelectionStep({ files, onContinue }) {
   }
 
   if (!result) {
-    const isFaces = phase === "faces";
-    return (
-      <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-8" data-testid="selection-analyzing">
-        <div className="flex items-center gap-3">
-          {isFaces ? <ScanFace className="h-5 w-5 animate-pulse text-emerald-400" /> : <Sparkles className="h-5 w-5 animate-pulse text-emerald-400" />}
-          <h2 className="font-display text-lg font-semibold">{isFaces ? "Analizando caras…" : "Analizando con IA…"}</h2>
-        </div>
-        <p className="mt-1.5 text-sm text-zinc-500">
-          {isFaces
-            ? "Detectando personas para afinar las ráfagas (caras que cambian = fotos distintas) y marcar dudas. Todo en local."
-            : "Evaluando enfoque y exposición de cada toma y agrupando ráfagas por similitud visual."}
-        </p>
-        <div className="mt-6 h-2 w-full overflow-hidden rounded-full bg-zinc-800">
-          <div className="h-full rounded-full bg-emerald-400 transition-all duration-200" style={{ width: `${isFaces ? faceProgress : progress}%` }} />
-        </div>
-        <p className="mt-2 font-mono text-xs text-zinc-500" data-testid="selection-progress-label">
-          {isFaces ? faceProgress : progress}% · {Array.from(files).length} archivos
-        </p>
-      </section>
-    );
+    return <SelectionProgress phase={phase} progress={progress} faceProgress={faceProgress} fileCount={Array.from(files).length} />;
   }
 
   const fs = result.faceStats;
