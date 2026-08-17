@@ -129,6 +129,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Verificado: página renderiza (nav, picker, modos, perfil) + test de XMP (incluye los 6 básicos, excluye Clarity/Vibrance/Saturation, formato exposición +0.00). jet total: pasa.
 - NOTA: análisis de carpeta real no automatizable en headless; validado por partes.
 
+### Iteración 18 (2026-08-16): Revisión de código — correcciones seguras
+- `server.py analyze_url`: inicializado `profiles = []` antes del if/elif/else (defensivo; el hallazgo "undefined" era falso positivo pero se blinda).
+- `Studio.jsx persist`: `console.warn` ahora solo en desarrollo (`NODE_ENV === 'development'`).
+- REVISADO y NO cambiado (falsos positivos): los `is None`/`is not None` del backend (líneas 188/293/411/790/859) son el idioma CORRECTO de Python; cambiarlos a `==` sería un anti-patrón. Catch "vacíos" en LearningModule/faceEngine son *skips* intencionados y ya llevan comentario + fallback.
+- DIFERIDO (riesgo de regresión sobre código probado, ya anotado en handoff): refactor de complejidad de componentes (ReviewStep/PhotographerStyles/PresetParamsStep/SelectionStep) y `_parse_profile`/`analyze_photographer_style`; y los cambios masivos de dependencias de hooks (efectos de montaje intencionados).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

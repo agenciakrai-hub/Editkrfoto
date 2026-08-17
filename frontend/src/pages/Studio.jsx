@@ -44,7 +44,9 @@ export default function Studio() {
 
   const persist = async (patch) => {
     try { await api.patch(`/projects/${projectId}/state`, patch); }
-    catch (err) { console.warn("No se pudo guardar el checkpoint de estado", err); }
+    catch (err) {
+      if (process.env.NODE_ENV === "development") console.warn("No se pudo guardar el checkpoint de estado", err);
+    }
   };
 
   const buildPayload = () => {

@@ -1104,6 +1104,7 @@ async def analyze_url(req: AnalyzeUrlRequest, user: User = Depends(get_current_u
 
     ext = _ext_of(url)
     errors = []
+    profiles = []  # inicializado siempre para evitar usos indefinidos
     if ext in PROFILE_EXTS:
         profiles = [_parse_profile(content, ext, url)]
     elif "html" in ctype or content[:200].lstrip().startswith(b"<"):
