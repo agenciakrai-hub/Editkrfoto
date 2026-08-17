@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Sparkles, ArrowRight, Layers, CheckCircle2, Images, ScanFace, Users, AlertTriangle } from "lucide-react";
+import { Sparkles, ArrowRight, Layers, CheckCircle2, Images, ScanFace, Users, User, AlertTriangle } from "lucide-react";
 import { SAMPLE_THUMBS } from "@/lib/rawSelection";
 import { analyzeFile, groupAndSelect, mapLimit } from "@/lib/imageAnalysis";
 import { applyFaceLayer } from "@/lib/faceEngine";
@@ -41,14 +41,14 @@ export default function SelectionStep({ files, onContinue }) {
 
         // Capa de caras (extra): solo sobre ráfagas y seleccionadas. Afina ráfagas + notas de dudas.
         setPhase("faces");
-        const { stats: faceStats } = await applyFaceLayer(photos, (d, t) => {
+        const { stats: faceStats, people } = await applyFaceLayer(photos, (d, t) => {
           if (active) setFaceProgress(t ? Math.round((d / t) * 100) : 100);
         });
         if (!active) return;
 
         const bursts = new Set(photos.map((p) => p.burstId)).size;
         const selected = photos.filter((p) => p.selectedForEdit).length;
-        setResult({ photos, total: photos.length, bursts, selected, faceStats });
+        setResult({ photos, total: photos.length, bursts, selected, faceStats, people });
       } catch (e) {
         if (active) setError("No se pudo analizar la selección. Inténtalo de nuevo.");
       }
@@ -120,6 +120,11 @@ export default function SelectionStep({ files, onContinue }) {
           <span className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800/70 px-2.5 py-1 text-xs text-zinc-300">
             <Users className="h-3.5 w-3.5 text-sky-400" /> {fs.groupPhotos} de grupo
           </span>
+          {fs.people > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800/70 px-2.5 py-1 text-xs text-zinc-300" data-testid="face-people">
+              <User className="h-3.5 w-3.5 text-violet-400" /> {fs.people} personas
+            </span>
+          )}
           {fs.rescued > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-300" data-testid="face-rescued">
               <CheckCircle2 className="h-3.5 w-3.5" /> {fs.rescued} rescatadas (cara distinta)
@@ -133,7 +138,7 @@ export default function SelectionStep({ files, onContinue }) {
         </div>
       )}
 
-      <button data-testid="selection-continue-btn" onClick={() => onContinue(result.photos)}
+      <button data-testid="selection-continue-btn" onClick={() => onContinue(result.photos, result.people || [])}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02]">
         Revisar selección <ArrowRight className="h-4 w-4" />
       </button>

@@ -111,6 +111,16 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - PENDIENTE Fase 2: filtros (grupo / sin personas / protagonistas), agrupado automático de caras (clustering con face_recognition) + etiquetado por el usuario (novia/novio/invitados).
 - NOTA: el flujo completo en el estudio requiere subir una carpeta de RAW real (no automatizable en headless); validado por partes (detección e2e + tests + compilación). Pendiente validación del usuario con fotos reales.
 
+### Iteración 16 (2026-08-16): Fase 2 — reconocimiento de caras (protagonistas) + filtros
+- Modelos añadidos y servidos localmente: `face_landmark_68` + `face_recognition` (además de tiny_face_detector). `loadFaceModels` carga los 3.
+- `detectFacesFromUrl(url, withDescriptors)` → descriptores 128-d por cara (verificado en navegador: 4 caras, len 128, distancias 0.63–0.77 = personas distintas).
+- `faceLogic.js` (puro, testeado): `euclidean` + `clusterFaces` (clustering voraz por centroide, umbral 0.55). jest 8/8 en faceLogic.
+- `applyFaceLayer` ahora agrupa personas por reconocimiento, asigna `p.people=[clusterId]`, y devuelve `people` (top 12 protagonistas con recorte 96x96 `thumb` + nº de fotos).
+- UI `ReviewStep` reescrito con: barra de **filtros** (Todas / Con personas / Grupos / Sin personas) + **panel de protagonistas** (avatar recortado, nombre editable —novia/novio/invitados—, contador, clic para filtrar por persona). `SelectionStep` muestra "N personas".
+- Threading: `SelectionStep.onContinue(photos, people)` → `Studio` guarda `people` → `ReviewStep`.
+- Todo local y gratis. No toca el motor de selección ni el de ajustes básicos. Compila; jet total 26/26.
+- NOTA: flujo completo requiere carpeta RAW real (no automatizable en headless); verificado por partes (reconocimiento e2e + tests + compilación). Pendiente validación del usuario. Etiquetas de personas son de sesión (no persistidas aún).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

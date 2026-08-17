@@ -27,6 +27,7 @@ export default function Studio() {
   const [step, setStep] = useState("folder");
   const [files, setFiles] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [people, setPeople] = useState([]);
   const [sendPhotos, setSendPhotos] = useState([]);
   const [profileChoice, setProfileChoice] = useState({ profile: "Adobe Standard" });
   const [presetInfo, setPresetInfo] = useState(null);
@@ -105,15 +106,16 @@ export default function Studio() {
         )}
 
         {step === "selection" && (
-          <SelectionStep files={files} onContinue={async (p) => {
+          <SelectionStep files={files} onContinue={async (p, ppl) => {
             setPhotos(p);
+            setPeople(ppl || []);
             await persist({ selectionCompleted: true, totalPhotos: p.length, selectionFilenames: p.filter((x) => x.selectedForEdit).map((x) => x.name) });
             setStep("review");
           }} />
         )}
 
         {step === "review" && (
-          <ReviewStep initialPhotos={photos} onContinue={async (all) => {
+          <ReviewStep initialPhotos={photos} people={people} onContinue={async (all) => {
             setPhotos(all);
             const queue = all.filter((x) => x.selectedForEdit);
             setSendPhotos(queue);

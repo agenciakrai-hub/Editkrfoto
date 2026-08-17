@@ -5,7 +5,7 @@
 import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
-import { facesChanged } from "@/lib/faceLogic";
+import { facesChanged, clusterFaces } from "@/lib/faceLogic";
 
 let modelsPromise = null;
 export function loadFaceModels() {
@@ -16,7 +16,11 @@ export function loadFaceModels() {
         try { await faceapi.tf.setBackend("webgl"); } catch { /* usa el backend disponible */ }
         await faceapi.tf.ready();
       }
-      await faceapi.nets.tinyFaceDetector.loadFromUri(url);
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(url),
+        faceapi.nets.faceLandmark68Net.loadFromUri(url),
+        faceapi.nets.faceRecognitionNet.loadFromUri(url),
+      ]);
       return true;
     })().catch((e) => {
       modelsPromise = null; // permite reintentar
@@ -37,12 +41,23 @@ function imgFromUrl(url) {
   });
 }
 
-// Devuelve caras normalizadas: [{ cx, cy, w, h, score }] (0..1 respecto al encuadre).
-export async function detectFacesFromUrl(url) {
+// Devuelve caras normalizadas [{ cx, cy, w, h, score, descriptor? }] (0..1 respecto al encuadre).
+export async function detectFacesFromUrl(url, withDescriptors = false) {
   const img = await imgFromUrl(url);
-  const dets = await faceapi.detectAllFaces(img, DET_OPTS);
   const W = img.naturalWidth || img.width || 1;
   const H = img.naturalHeight || img.height || 1;
+  if (withDescriptors) {
+    const res = await faceapi.detectAllFaces(img, DET_OPTS).withFaceLandmarks().withFaceDescriptors();
+    return res.map((r) => ({
+      cx: (r.detection.box.x + r.detection.box.width / 2) / W,
+      cy: (r.detection.box.y + r.detection.box.height / 2) / H,
+      w: r.detection.box.width / W,
+      h: r.detection.box.height / H,
+      score: r.detection.score,
+      descriptor: Array.from(r.descriptor),
+    }));
+  }
+  const dets = await faceapi.detectAllFaces(img, DET_OPTS);
   return dets.map((d) => ({
     cx: (d.box.x + d.box.width / 2) / W,
     cy: (d.box.y + d.box.height / 2) / H,
@@ -52,13 +67,37 @@ export async function detectFacesFromUrl(url) {
   }));
 }
 
+// Recorta la cara (box normalizado) de la miniatura del RAW → dataURL 96x96 para el panel de personas.
+async function cropFace(file, box) {
+  let url = null;
+  try {
+    url = await extractThumb(file);
+    if (!url) return null;
+    const img = await imgFromUrl(url);
+    const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    const bw = box.w * W, bh = box.h * H;
+    const pad = 0.45;
+    const sx = Math.max(0, box.cx * W - bw * (1 + pad) / 2);
+    const sy = Math.max(0, box.cy * H - bh * (1 + pad) / 2);
+    const sw = Math.min(W - sx, bw * (1 + pad));
+    const sh = Math.min(H - sy, bh * (1 + pad));
+    const c = document.createElement("canvas");
+    c.width = 96; c.height = 96;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, 96, 96);
+    return c.toDataURL("image/jpeg", 0.8);
+  } catch { return null; }
+  finally { if (url) URL.revokeObjectURL(url); }
+}
+
 // ¿Cambió la configuración de caras entre dos tomas? → ver faceLogic.facesChanged
 
 // Ejecuta la capa de caras SOLO sobre ráfagas (>1) y fotos ya seleccionadas por la IA (rápido).
-// Muta `photos` añadiendo: faces, faceCount, isGroup, noPeople, faceDistinct, doubt, facesAnalyzed.
+// Muta `photos` (faces, faceCount, isGroup, noPeople, faceDistinct, doubt, facesAnalyzed, people[]).
+// Devuelve stats + people (protagonistas agrupados por reconocimiento facial, para filtrar/etiquetar).
 export async function applyFaceLayer(photos, onProgress) {
   try { await loadFaceModels(); }
-  catch { return { photos, stats: null, error: true }; }
+  catch { return { photos, stats: null, people: [], error: true }; }
 
   const burstSize = {};
   photos.forEach((p) => { burstSize[p.burstId] = (burstSize[p.burstId] || 0) + 1; });
@@ -69,7 +108,7 @@ export async function applyFaceLayer(photos, onProgress) {
     let url = null;
     try {
       url = await extractThumb(p.file);
-      p.faces = url ? await detectFacesFromUrl(url) : [];
+      p.faces = url ? await detectFacesFromUrl(url, true) : [];
     } catch { p.faces = []; }
     finally { if (url) URL.revokeObjectURL(url); }
     p.faceCount = p.faces.length;
@@ -87,7 +126,6 @@ export async function applyFaceLayer(photos, onProgress) {
   for (const g of Object.values(groups)) {
     if (g.length < 2) continue;
     const best = g.reduce((a, b) => (b.score > a.score ? b : a));
-    // Rescata como foto DISTINTA cualquier hermana cuya configuración de caras cambió.
     for (const p of g) {
       if (p === best || !p.facesAnalyzed) continue;
       if (facesChanged(best.faces, p.faces)) {
@@ -95,7 +133,6 @@ export async function applyFaceLayer(photos, onProgress) {
         p.faceDistinct = true;
       }
     }
-    // Duda: varias tomas seleccionadas con la MISMA configuración de caras y sin ganadora clara.
     const sameLayoutSelected = g.filter((p) => p.selectedForEdit && p.facesAnalyzed && !p.faceDistinct);
     if (sameLayoutSelected.length > 1) {
       sameLayoutSelected.forEach((p) => { p.doubt = true; });
@@ -103,14 +140,49 @@ export async function applyFaceLayer(photos, onProgress) {
     }
   }
 
+  // Reconocimiento → agrupa personas (protagonistas) por descriptor facial.
+  const entries = [];
+  for (const p of photos) {
+    if (!p.faces) continue;
+    p.faces.forEach((f, idx) => {
+      if (f.descriptor) entries.push({ key: `${p.id}#${idx}`, descriptor: f.descriptor, photo: p, box: f, area: f.w * f.h });
+    });
+  }
+  const byKey = Object.fromEntries(entries.map((e) => [e.key, e]));
+  const { assign, clusters } = clusterFaces(entries.map((e) => ({ key: e.key, descriptor: e.descriptor })));
+
+  const photoPeople = {};
+  for (const e of entries) {
+    const cid = assign[e.key];
+    (photoPeople[e.photo.id] = photoPeople[e.photo.id] || new Set()).add(cid);
+  }
+  photos.forEach((p) => { p.people = Array.from(photoPeople[p.id] || []); });
+
+  const meta = clusters.map((c, i) => {
+    const photoSet = new Set();
+    let rep = null;
+    for (const key of c.members) {
+      const e = byKey[key];
+      if (!e) continue;
+      photoSet.add(e.photo.id);
+      if (!rep || e.area > rep.area) rep = e;
+    }
+    return { id: i, count: photoSet.size, faces: c.members.length, rep };
+  }).filter((m) => m.rep).sort((a, b) => b.count - a.count);
+
+  const top = meta.slice(0, 12);
+  for (const m of top) m.thumb = await cropFace(m.rep.photo.file, m.rep.box);
+  const people = top.map((m) => ({ id: m.id, count: m.count, faces: m.faces, thumb: m.thumb }));
+
   const analyzed = photos.filter((p) => p.facesAnalyzed);
   const stats = {
     analyzed: analyzed.length,
     withPeople: analyzed.filter((p) => p.faceCount > 0).length,
     groupPhotos: analyzed.filter((p) => p.isGroup).length,
     noPeople: analyzed.filter((p) => p.noPeople).length,
+    people: people.length,
     rescued,
     doubts,
   };
-  return { photos, stats, error: false };
+  return { photos, stats, people, error: false };
 }
