@@ -149,6 +149,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - HECHO de la revisión de código: bug `profiles` (blindado), hooks (eslint-disable con motivo), `_parse_profile` (helpers), console.warn (dev-gate), ALL_KEYS (hoist), y complejidad de PhotographerStyles/ReviewStep/SelectionStep reducida.
 - PENDIENTE (Important, no crítico): `PresetParamsStep` y backend `analyze_photographer_style`/`compute_selection` — funciones con lógica/estado entrelazado; se dejan para una pasada dedicada con pruebas.
 
+### Iteración 21 (2026-08-17): Motor de selección IA — precisión (Parte 1)
+- **Auto-rotación EXIF** (`exif.js`): lee la orientación (JPEG/TIFF/CR3-CMT1) y la aplica en `rawThumb.extractThumb` (miniatura upright) y en `imageAnalysis.bitmapFromFile` (análisis upright). Arregla verticales de lado y el falso "Sin personas" (las caras giradas ya no se detectaban).
+- **Ojos y expresión**: `detectFacesFromUrl` ahora usa landmarks + expresiones + descriptor → por cara `ear` (ojos abiertos), `smile`, `area`. `photoFaceScore` (pure) penaliza ojos cerrados (peor caso del grupo), premia sonrisa y tamaño de sujeto. Modelo `face_expression` añadido a /models.
+- **Selección precisa por ráfaga**: re-ranking en `applyFaceLayer` = 55% base (nitidez/exposición) + 45% cara → elige SOLO la mejor. "Dudas" solo en empate real ≥98.5%. "Cara distinta" solo si las caras cambiaron de posición (>6% encuadre).
+- Verificado: EXIF reader (test), detección+ojos+expresión e2e en navegador (3 caras, EAR 0.26-0.30, happy, desc 128), `photoFaceScore`/EAR (tests). jet total 33+ OK. Flujo con RAW real: pendiente prueba del usuario.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

@@ -1,17 +1,22 @@
 // Análisis de imagen real (cliente) optimizado para miles de fotos.
 // Extrae SOLO la miniatura JPEG incrustada del RAW (vía file.slice en rawThumb) y mide
 // NITIDEZ (enfoque) y EXPOSICIÓN. El agrupado/selección vive en selectionLogic (puro).
-import { extractPreviewBlob } from "@/lib/rawThumb";
+import { extractPreview } from "@/lib/rawThumb";
+import { orientToCanvas } from "@/lib/exif";
 import { autoToneFromHistogram } from "@/lib/selectionLogic";
 import { computePhotometrics } from "@/lib/rawaistudio/photometricAnalysis";
 import { computeBasic } from "@/lib/rawaistudio/exposureEngine";
 export { groupAndSelect, hamming, autoToneFromHistogram, PHASH_THRESHOLD, AMBIGUOUS_MARGIN } from "@/lib/selectionLogic";
 
 async function bitmapFromFile(file) {
-  const blob = await extractPreviewBlob(file);
+  const { blob, orientation } = await extractPreview(file);
   if (!blob) return null;
   try {
-    return await createImageBitmap(blob, { resizeWidth: 256, resizeQuality: "low" });
+    const bmp = await createImageBitmap(blob, { imageOrientation: "none" });
+    if (!orientation || orientation === 1) return bmp;
+    const canvas = orientToCanvas(bmp, orientation); // upright para histograma y caras
+    if (bmp.close) bmp.close();
+    return canvas;
   } catch {
     try { return await createImageBitmap(blob); } catch { return null; }
   }

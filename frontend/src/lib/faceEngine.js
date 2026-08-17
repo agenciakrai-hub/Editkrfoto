@@ -5,7 +5,7 @@
 import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
-import { facesChanged, clusterFaces } from "@/lib/faceLogic";
+import { facesChanged, clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
 
 let modelsPromise = null;
 export function loadFaceModels() {
@@ -20,6 +20,7 @@ export function loadFaceModels() {
         faceapi.nets.tinyFaceDetector.loadFromUri(url),
         faceapi.nets.faceLandmark68Net.loadFromUri(url),
         faceapi.nets.faceRecognitionNet.loadFromUri(url),
+        faceapi.nets.faceExpressionNet.loadFromUri(url),
       ]);
       return true;
     })().catch((e) => {
@@ -30,7 +31,7 @@ export function loadFaceModels() {
   return modelsPromise;
 }
 
-const DET_OPTS = new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.35 });
+const DET_OPTS = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
 
 function imgFromUrl(url) {
   return new Promise((resolve, reject) => {
@@ -41,30 +42,25 @@ function imgFromUrl(url) {
   });
 }
 
-// Devuelve caras normalizadas [{ cx, cy, w, h, score, descriptor? }] (0..1 respecto al encuadre).
-export async function detectFacesFromUrl(url, withDescriptors = false) {
+// Detecta caras con landmarks + expresiones + descriptor. Devuelve por cara:
+// { cx, cy, w, h, score, descriptor, ear (ojos abiertos), smile (0..1), area }.
+export async function detectFacesFromUrl(url) {
   const img = await imgFromUrl(url);
   const W = img.naturalWidth || img.width || 1;
   const H = img.naturalHeight || img.height || 1;
-  if (withDescriptors) {
-    const res = await faceapi.detectAllFaces(img, DET_OPTS).withFaceLandmarks().withFaceDescriptors();
-    return res.map((r) => ({
-      cx: (r.detection.box.x + r.detection.box.width / 2) / W,
-      cy: (r.detection.box.y + r.detection.box.height / 2) / H,
-      w: r.detection.box.width / W,
-      h: r.detection.box.height / H,
-      score: r.detection.score,
-      descriptor: Array.from(r.descriptor),
-    }));
-  }
-  const dets = await faceapi.detectAllFaces(img, DET_OPTS);
-  return dets.map((d) => ({
-    cx: (d.box.x + d.box.width / 2) / W,
-    cy: (d.box.y + d.box.height / 2) / H,
-    w: d.box.width / W,
-    h: d.box.height / H,
-    score: d.score,
-  }));
+  const res = await faceapi.detectAllFaces(img, DET_OPTS)
+    .withFaceLandmarks().withFaceExpressions().withFaceDescriptors();
+  return res.map((r) => {
+    const pts = r.landmarks.positions;
+    const ear = (eyeAspectRatio(pts.slice(36, 42)) + eyeAspectRatio(pts.slice(42, 48))) / 2;
+    const smile = r.expressions?.happy ?? 0;
+    const box = r.detection.box;
+    return {
+      cx: (box.x + box.width / 2) / W, cy: (box.y + box.height / 2) / H,
+      w: box.width / W, h: box.height / H, score: r.detection.score,
+      descriptor: Array.from(r.descriptor), ear, smile, area: (box.width / W) * (box.height / H),
+    };
+  });
 }
 
 // Recorta la cara (box normalizado) de la miniatura del RAW → dataURL 96x96 para el panel de personas.
@@ -108,36 +104,44 @@ export async function applyFaceLayer(photos, onProgress) {
     let url = null;
     try {
       url = await extractThumb(p.file);
-      p.faces = url ? await detectFacesFromUrl(url, true) : [];
+      p.faces = url ? await detectFacesFromUrl(url) : [];
     } catch { p.faces = []; }
     finally { if (url) URL.revokeObjectURL(url); }
     p.faceCount = p.faces.length;
     p.isGroup = p.faceCount >= 3;
     p.noPeople = p.faceCount === 0;
+    p.faceScore = photoFaceScore(p.faces); // ojos/sonrisa/tamaño
     p.facesAnalyzed = true;
     done++;
     onProgress && onProgress(done, targets.length);
   });
 
-  // Afinado de ráfagas + notas de "Dudas"
+  // Re-selección PRECISA por ráfaga: elige la MEJOR toma (nitidez/exposición + ojos + sonrisa).
+  // "Dudas" solo en empate real muy ajustado. Caras distintas = foto diferente (se conserva).
   const groups = {};
   photos.forEach((p) => { (groups[p.burstId] = groups[p.burstId] || []).push(p); });
   let rescued = 0, doubts = 0;
+  const rankOf = (p) => {
+    const base = (p.score || 50) / 100;
+    return p.faceScore == null ? base : 0.55 * base + 0.45 * p.faceScore;
+  };
   for (const g of Object.values(groups)) {
     if (g.length < 2) continue;
-    const best = g.reduce((a, b) => (b.score > a.score ? b : a));
+    g.forEach((p) => { p.rank = rankOf(p); });
+    const best = g.reduce((a, b) => (b.rank > a.rank ? b : a));
+    g.forEach((p) => { p.selectedForEdit = false; p.doubt = false; p.faceDistinct = false; });
+    best.selectedForEdit = true;
     for (const p of g) {
-      if (p === best || !p.facesAnalyzed) continue;
-      if (facesChanged(best.faces, p.faces)) {
-        if (!p.selectedForEdit) { p.selectedForEdit = true; rescued++; }
-        p.faceDistinct = true;
+      if (p === best) continue;
+      if (p.facesAnalyzed && best.facesAnalyzed && facesChanged(best.faces, p.faces)) {
+        // Configuración de caras distinta (ojos/posición) → momento diferente: se conserva.
+        p.selectedForEdit = true; p.faceDistinct = true; rescued++;
+      } else if (p.rank >= best.rank * 0.985) {
+        // Empate real: no hay una claramente mejor → se marcan ambas para que decida el fotógrafo.
+        p.selectedForEdit = true; p.doubt = true; best.doubt = true; doubts++;
       }
     }
-    const sameLayoutSelected = g.filter((p) => p.selectedForEdit && p.facesAnalyzed && !p.faceDistinct);
-    if (sameLayoutSelected.length > 1) {
-      sameLayoutSelected.forEach((p) => { p.doubt = true; });
-      doubts += sameLayoutSelected.length;
-    }
+    g.forEach((p) => { p.score = Math.round(p.rank * 100); });
   }
 
   // Reconocimiento → agrupa personas (protagonistas) por descriptor facial.

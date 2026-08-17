@@ -20,6 +20,28 @@ export function facesChanged(a, b) {
   return false;
 }
 
+// Eye Aspect Ratio (ojos abiertos vs cerrados). eye: 6 puntos [p1..p6] del landmark 68.
+export function eyeAspectRatio(eye) {
+  const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const C = d(eye[0], eye[3]);
+  return C ? (d(eye[1], eye[5]) + d(eye[2], eye[4])) / (2 * C) : 0;
+}
+export const EYE_OPEN_EAR = 0.20;
+
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+// Puntuación de cara de una foto [0,1]: prioriza OJOS abiertos (peor caso del grupo),
+// SONRISA media y TAMAÑO del sujeto. faces: [{ ear, smile, area }]. Sin caras → null.
+export function photoFaceScore(faces) {
+  if (!faces || !faces.length) return null;
+  const minEar = Math.min(...faces.map((f) => f.ear ?? 0));
+  const meanSmile = faces.reduce((s, f) => s + (f.smile ?? 0), 0) / faces.length;
+  const maxArea = Math.max(...faces.map((f) => f.area ?? 0));
+  const eyesScore = clamp01((minEar - 0.15) / 0.13); // <0.15 cerrados → 0 ; >0.28 → 1
+  const sizeScore = clamp01(maxArea * 6);
+  return 0.55 * eyesScore + 0.30 * meanSmile + 0.15 * sizeScore;
+}
+
 // Distancia euclídea entre descriptores faciales de 128 dimensiones.
 export function euclidean(a, b) {
   let s = 0;

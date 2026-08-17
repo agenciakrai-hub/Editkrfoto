@@ -1,4 +1,4 @@
-import { clusterFaces, euclidean, facesChanged } from "./faceLogic";
+import { clusterFaces, euclidean, facesChanged, eyeAspectRatio, photoFaceScore } from "./faceLogic";
 
 const face = (cx, cy) => ({ cx, cy, w: 0.2, h: 0.25, score: 0.9 });
 
@@ -48,4 +48,30 @@ test("descriptores idénticos → un solo cluster", () => {
   ]);
   expect(clusters.length).toBe(1);
   expect(clusters[0].members.length).toBe(3);
+});
+
+// --- ojos (EAR) y puntuación de cara ---
+const openEye = [{ x: 0, y: 0 }, { x: 1, y: -1 }, { x: 2, y: -1 }, { x: 3, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 }];
+const closedEye = [{ x: 0, y: 0 }, { x: 1, y: -0.05 }, { x: 2, y: -0.05 }, { x: 3, y: 0 }, { x: 2, y: 0.05 }, { x: 1, y: 0.05 }];
+
+test("EAR alto con ojo abierto y bajo con ojo cerrado", () => {
+  expect(eyeAspectRatio(openEye)).toBeGreaterThan(0.5);
+  expect(eyeAspectRatio(closedEye)).toBeLessThan(0.1);
+});
+
+test("photoFaceScore: null sin caras", () => {
+  expect(photoFaceScore([])).toBeNull();
+  expect(photoFaceScore(null)).toBeNull();
+});
+
+test("photoFaceScore: ojos abiertos + sonrisa puntúa más que ojos cerrados", () => {
+  const good = photoFaceScore([{ ear: 0.30, smile: 0.9, area: 0.2 }]);
+  const blink = photoFaceScore([{ ear: 0.10, smile: 0.9, area: 0.2 }]);
+  expect(good).toBeGreaterThan(blink);
+});
+
+test("photoFaceScore: en grupo penaliza si ALGUIEN tiene los ojos cerrados", () => {
+  const allOpen = photoFaceScore([{ ear: 0.30, smile: 0.5, area: 0.1 }, { ear: 0.29, smile: 0.5, area: 0.1 }]);
+  const oneBlink = photoFaceScore([{ ear: 0.30, smile: 0.5, area: 0.1 }, { ear: 0.10, smile: 0.5, area: 0.1 }]);
+  expect(allOpen).toBeGreaterThan(oneBlink);
 });

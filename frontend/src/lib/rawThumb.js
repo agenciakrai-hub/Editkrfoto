@@ -2,6 +2,7 @@
 // Casi todos los RAW llevan uno o más JPEG embebidos (SOI 0xFFD8 … EOI 0xFFD9).
 // Elegimos el JPEG más grande como miniatura. Para JPG/JPEG usamos el archivo directamente.
 import { extOf } from "@/lib/rawSelection";
+import { readOrientation, orientToCanvas } from "@/lib/exif";
 
 function findLargestJpeg(bytes) {
   let best = null;
@@ -28,8 +29,19 @@ function findLargestJpeg(bytes) {
 
 export async function extractThumb(file) {
   if (!file) return null;
-  const blob = await extractPreviewBlob(file);
-  return blob ? URL.createObjectURL(blob) : null;
+  const { blob, orientation } = await extractPreview(file);
+  if (!blob) return null;
+  if (!orientation || orientation === 1) return URL.createObjectURL(blob);
+  // Auto-rotar según EXIF (verticales de DNG/CR3 vienen de lado): decodifica sin auto-orientar y rota.
+  try {
+    const bmp = await createImageBitmap(blob, { imageOrientation: "none" });
+    const canvas = orientToCanvas(bmp, orientation);
+    if (bmp.close) bmp.close();
+    const out = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.9));
+    return URL.createObjectURL(out || blob);
+  } catch {
+    return URL.createObjectURL(blob);
+  }
 }
 
 // Lee SOLO los primeros MB del RAW (file.slice) para extraer la miniatura/preview JPEG incrustada.
@@ -41,21 +53,30 @@ async function readHead(file, len) {
   return new Uint8Array(await slice.arrayBuffer());
 }
 
-export async function extractPreviewBlob(file) {
-  if (!file) return null;
+// Devuelve { blob, orientation } de la vista previa incrustada del RAW (o el propio JPG).
+export async function extractPreview(file) {
+  if (!file) return { blob: null, orientation: 1 };
   const ext = extOf(file.name);
-  if (ext === "jpg" || ext === "jpeg") return file;
+  if (ext === "jpg" || ext === "jpeg") {
+    const head = await readHead(file, 128 * 1024);
+    return { blob: file, orientation: readOrientation(head) };
+  }
   try {
     let bytes = await readHead(file, HEAD_BYTES);
     let found = findLargestJpeg(bytes);
-    // Si en la cabecera no hay un JPEG utilizable, como último recurso leemos el archivo completo.
     if ((!found || found.len < 2048) && file.size > HEAD_BYTES) {
       bytes = new Uint8Array(await file.arrayBuffer());
       found = findLargestJpeg(bytes);
     }
-    if (!found || found.len < 1024) return null;
-    return new Blob([bytes.slice(found.start, found.end)], { type: "image/jpeg" });
+    if (!found || found.len < 1024) return { blob: null, orientation: 1 };
+    const orientation = readOrientation(bytes);
+    return { blob: new Blob([bytes.slice(found.start, found.end)], { type: "image/jpeg" }), orientation };
   } catch {
-    return null;
+    return { blob: null, orientation: 1 };
   }
+}
+
+// Compat: devuelve solo el blob (sin orientación).
+export async function extractPreviewBlob(file) {
+  return (await extractPreview(file)).blob;
 }
