@@ -121,6 +121,14 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Todo local y gratis. No toca el motor de selección ni el de ajustes básicos. Compila; jet total 26/26.
 - NOTA: flujo completo requiere carpeta RAW real (no automatizable en headless); verificado por partes (reconocimiento e2e + tests + compilación). Pendiente validación del usuario. Etiquetas de personas son de sesión (no persistidas aún).
 
+### Iteración 17 (2026-08-16): Herramienta "Auto básicos → XMP" (independiente, 100% local)
+- Nueva página `/auto-basic` (nav "Auto XMP"): importa carpeta → el motor v2 analiza TODAS las fotos → calcula los 6 básicos por foto (modo de precisión elegido) → exporta ZIP de .xmp con jszip en el navegador (sin backend, sin coste).
+- Sin ráfagas, sin selección, sin presets/estilos: SOLO ajustes básicos (los creativos no se incluyen).
+- Reutiliza `analyzeFile` (fotometría), `computeBasic` (exposureEngine v2), `buildStyleXmp` (cliente) y file-saver. Fallback a AUTO_BASIC_PARAMS si una foto no da fotometría.
+- Cambiar de modo tras analizar recalcula al instante (no reanaliza). Perfil de cámara configurable (def. Adobe Standard).
+- Verificado: página renderiza (nav, picker, modos, perfil) + test de XMP (incluye los 6 básicos, excluye Clarity/Vibrance/Saturation, formato exposición +0.00). jet total: pasa.
+- NOTA: análisis de carpeta real no automatizable en headless; validado por partes.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

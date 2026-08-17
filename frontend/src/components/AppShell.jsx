@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from "react";
 
 const NAV = [
   { to: "/dashboard", label: "Proyectos", testId: "nav-dashboard-btn" },
+  { to: "/auto-basic", label: "Auto XMP", testId: "nav-autobasic-btn" },
   { to: "/styles", label: "Estilos", testId: "nav-styles-btn" },
   { to: "/learning", label: "Aprendizaje", testId: "nav-learning-btn" },
   { to: "/engine-lab", label: "Motor", testId: "nav-engine-btn" },
