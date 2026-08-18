@@ -69,7 +69,9 @@ export default function LearningModule() {
         const values = {};
         for (const p of PARAM_DEFS) if (config[p.key]?.enabled) values[p.key] = config[p.key].value;
         if (Object.keys(values).length) added.push({ name: file.name, values });
-      } catch { /* archivo ilegible: se ignora */ }
+      } catch { /* archivo ilegible: se ignora */
+        if (process.env.NODE_ENV === "development") console.debug("XMP ilegible, se ignora:", file.name);
+      }
     }
     if (!added.length) { toast.error("Ningún .xmp válido con ajustes de revelado"); return; }
     const next = [...samples, ...added];

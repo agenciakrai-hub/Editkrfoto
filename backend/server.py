@@ -475,9 +475,9 @@ def _set_xmp_meta(xmp):
         apat = re.compile(r'(xmp:' + attr + r'=")([^"]*)(")')
         epat = re.compile(r'(<xmp:' + attr + r'>)([^<]*)(</xmp:' + attr + r'>)')
         if apat.search(xmp):
-            xmp = apat.sub(lambda m: m.group(1) + val + m.group(3), xmp, count=1)
+            xmp = apat.sub(lambda m, val=val: m.group(1) + val + m.group(3), xmp, count=1)
         elif epat.search(xmp):
-            xmp = epat.sub(lambda m: m.group(1) + val + m.group(3), xmp, count=1)
+            xmp = epat.sub(lambda m, val=val: m.group(1) + val + m.group(3), xmp, count=1)
         else:
             idx = xmp.find("<rdf:Description")
             end = xmp.find(">", idx) if idx != -1 else -1

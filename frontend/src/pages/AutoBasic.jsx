@@ -58,7 +58,9 @@ export default function AutoBasic() {
             const bytes = new Uint8Array(await it.file.arrayBuffer());
             const res = embedXmpInDng(bytes, xmp);
             if (res.ok) { zip.file(it.name, res.bytes); embedded++; continue; }
-          } catch { /* si falla, caemos al sidecar como respaldo */ }
+          } catch (err) { /* si falla, caemos al sidecar como respaldo */
+            if (process.env.NODE_ENV === "development") console.warn("Fallo al embeber XMP en DNG, se usa sidecar:", it.name, err);
+          }
         }
         zip.file(it.name.replace(/\.[^.]+$/, "") + ".xmp", xmp);
         sidecars++;

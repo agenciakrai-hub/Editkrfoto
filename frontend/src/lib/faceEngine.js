@@ -14,7 +14,8 @@ export function loadFaceModels() {
     const url = (process.env.PUBLIC_URL || "") + "/models";
     modelsPromise = (async () => {
       if (faceapi.tf) {
-        try { await faceapi.tf.setBackend("webgl"); } catch { /* usa el backend disponible */ }
+        try { await faceapi.tf.setBackend("webgl"); }
+        catch (err) { if (process.env.NODE_ENV === "development") console.debug("WebGL no disponible, backend por defecto:", err?.message); }
         await faceapi.tf.ready();
       }
       await Promise.all([
