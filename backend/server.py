@@ -312,6 +312,24 @@ async def merge_state(project_id: str, patch: Dict[str, Any], user: User = Depen
     return Project(**updated)
 
 
+@api_router.get("/projects/{project_id}/final-selection")
+async def get_final_selection(project_id: str, user: User = Depends(get_current_user)):
+    # Selección final estructurada para el futuro plugin de Lightroom Classic.
+    doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    state = doc.get("rawai_state", {}) or {}
+    items = state.get("finalSelection") or []
+    selected = [x for x in items if x.get("selected")]
+    return {
+        "project_id": project_id,
+        "total": len(items),
+        "selected_count": len(selected),
+        "items": items,           # {filename, selected, source: "ai"|"manual", rating:5, label:"Green"}
+        "selected": selected,
+    }
+
+
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, user: User = Depends(get_current_user)):
     res = await db.projects.delete_one({"id": project_id, "user_id": user.user_id})
@@ -361,6 +379,8 @@ def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, proc
    xmp:ModifyDate="{now}"
    crs:RawFileName="{filename}"
    crs:Precision="{process_precision}"
+   xmp:Rating="5"
+   xmp:Label="Green"
 {crs_block}>
   </rdf:Description>
  </rdf:RDF>
@@ -402,6 +422,27 @@ def _set_crs_attr(xmp, attr, value):
     return xmp[:insert_at] + f'\n   crs:{attr}="{value}"' + xmp[insert_at:]
 
 
+def _set_xmp_meta(xmp):
+    # Inserta/actualiza xmp:Rating="5" y xmp:Label="Green" sin borrar ningún otro campo del sidecar.
+    if "xmlns:xmp=" not in xmp:
+        xmp = xmp.replace("<rdf:Description", '<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/"', 1)
+    for attr, val in (("Rating", "5"), ("Label", "Green")):
+        apat = re.compile(r'(xmp:' + attr + r'=")([^"]*)(")')
+        epat = re.compile(r'(<xmp:' + attr + r'>)([^<]*)(</xmp:' + attr + r'>)')
+        if apat.search(xmp):
+            xmp = apat.sub(lambda m: m.group(1) + val + m.group(3), xmp, count=1)
+        elif epat.search(xmp):
+            xmp = epat.sub(lambda m: m.group(1) + val + m.group(3), xmp, count=1)
+        else:
+            idx = xmp.find("<rdf:Description")
+            end = xmp.find(">", idx) if idx != -1 else -1
+            if end == -1:
+                continue
+            insert_at = end - 1 if xmp[end - 1] == "/" else end
+            xmp = xmp[:insert_at] + f'\n   xmp:{attr}="{val}"' + xmp[insert_at:]
+    return xmp
+
+
 def build_photo_xmp(filename, basic, creative_params, preset_xmp, camera_profile, precision):
     # Si hay un preset Lightroom completo: se conserva TODO su look (curvas, HSL, textura…)
     # y solo se SUSTITUYEN los básicos de luz por la corrección automática por foto de la IA.
@@ -410,7 +451,7 @@ def build_photo_xmp(filename, basic, creative_params, preset_xmp, camera_profile
         for key, attr in BASIC_ATTR_MAP.items():
             if basic and key in basic and basic[key] is not None:
                 xmp = _set_crs_attr(xmp, attr, _fmt_basic(key, basic[key]))
-        return xmp
+        return _set_xmp_meta(xmp)  # 5★ + etiqueta verde para la selección final
     # Sin preset: básicos por foto + capa creativa (sliders/estilo).
     params = {}
     params.update(basic or {})

@@ -155,6 +155,15 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Selección precisa por ráfaga**: re-ranking en `applyFaceLayer` = 55% base (nitidez/exposición) + 45% cara → elige SOLO la mejor. "Dudas" solo en empate real ≥98.5%. "Cara distinta" solo si las caras cambiaron de posición (>6% encuadre).
 - Verificado: EXIF reader (test), detección+ojos+expresión e2e en navegador (3 caras, EAR 0.26-0.30, happy, desc 128), `photoFaceScore`/EAR (tests). jet total 33+ OK. Flujo con RAW real: pendiente prueba del usuario.
 
+### Iteración 22 (2026-08-17): Selección final (finalSelection) + 5★/verde + visor
+- **Regla IA→Revisión→final**: `finalSelection` (en `rawai_state`) es la fuente de verdad. La IA solo propone (`source:"ai"`); cada cambio manual marca `source:"manual"` y persiste al instante (`Studio.persistFinal` + `ReviewStep.onChange`).
+- **Persistencia/restauración**: al reabrir, `FolderSelectStep` restaura `finalSelection` por nombre (manual prevalece); NO re-ejecuta la IA sobre lo ya decidido. Descartadas se conservan (pestaña "No seleccionadas").
+- **XMP**: `build_xmp` añade `xmp:Rating="5"` + `xmp:Label="Green"`; ruta preset usa `_set_xmp_meta` (inserta/actualiza esos 2 atributos y el namespace xmp SIN borrar Look/ToneCurve/HSL…). Verificado XML bien formado.
+- **Endpoint** `GET /api/projects/{id}/final-selection` → estructura para el plugin de Lightroom: `{filename, selected, source, rating, label}`.
+- **UI** `ReviewStep` reescrito: pestañas Seleccionadas(X)/No seleccionadas(X), tarjetas grandes con 5★+etiqueta verde+estado+IA/Manual+añadir/quitar. Nuevo `PhotoViewer` (grande, ←/→, estado, IA/manual, añadir/quitar, Esc).
+- No se tocó el motor de selección (puntuación/ráfagas/caras/ojos/sonrisa intactos).
+- NOTA: el panel de filtros por protagonista (iter.16) NO se muestra en la nueva revisión por pestañas (el reconocimiento sigue corriendo); se puede re-añadir si se desea. Flujo con RAW real: pendiente prueba del usuario.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

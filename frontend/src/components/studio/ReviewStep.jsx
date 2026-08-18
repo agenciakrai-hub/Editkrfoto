@@ -1,118 +1,127 @@
 import { useMemo, useState } from "react";
-import { Users, User, UserX, Filter, ArrowRight } from "lucide-react";
-import PhotoCard from "@/components/studio/PhotoCard";
+import { ArrowRight, Star, Plus, X, Sparkles, Hand } from "lucide-react";
+import Thumbnail from "@/components/studio/Thumbnail";
+import PhotoViewer from "@/components/studio/PhotoViewer";
 
-export default function ReviewStep({ initialPhotos, people = [], onContinue }) {
+function Stars() {
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {[0, 1, 2, 3, 4].map((i) => <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />)}
+    </span>
+  );
+}
+
+export default function ReviewStep({ initialPhotos, people = [], onChange, onContinue }) {
   const [photos, setPhotos] = useState(initialPhotos);
-  const [filter, setFilter] = useState("all");
-  const [names, setNames] = useState({}); // { clusterId: label }
+  const [tab, setTab] = useState("selected"); // selected | unselected
+  const [viewer, setViewer] = useState(null); // { index }
 
-  const toggle = (id) => {
-    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, selectedForEdit: !p.selectedForEdit } : p)));
+  const selected = useMemo(() => photos.filter((p) => p.selectedForEdit), [photos]);
+  const unselected = useMemo(() => photos.filter((p) => !p.selectedForEdit), [photos]);
+  const list = tab === "selected" ? selected : unselected;
+
+  const applyToggle = (id) => {
+    const next = photos.map((p) => (p.id === id ? { ...p, selectedForEdit: !p.selectedForEdit, source: "manual" } : p));
+    setPhotos(next);
+    onChange && onChange(next); // persistencia inmediata (decisión manual)
+    return next;
   };
 
-  const selectedCount = photos.filter((p) => p.selectedForEdit).length;
-  const hasFaces = photos.some((p) => p.facesAnalyzed);
-
-  const counts = useMemo(() => ({
-    all: photos.length,
-    withpeople: photos.filter((p) => p.facesAnalyzed && p.faceCount > 0).length,
-    group: photos.filter((p) => p.isGroup).length,
-    nopeople: photos.filter((p) => p.noPeople).length,
-  }), [photos]);
-
-  const nameOf = (id, i) => names[id] || `Persona ${i + 1}`;
-
-  const matches = (p) => {
-    if (filter === "all") return true;
-    if (filter === "withpeople") return p.facesAnalyzed && p.faceCount > 0;
-    if (filter === "group") return p.isGroup;
-    if (filter === "nopeople") return p.noPeople;
-    if (filter.startsWith("person:")) return (p.people || []).includes(Number(filter.slice(7)));
-    return true;
+  const openViewer = (photo) => {
+    setViewer({ id: photo.id });
   };
-  const visible = photos.filter(matches);
 
-  const FilterChip = ({ id, label, count, icon: Icon }) => (
-    <button data-testid={`filter-${id}`} onClick={() => setFilter(id)}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-        filter === id ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"
-      }`}>
-      {Icon && <Icon className="h-3.5 w-3.5" />} {label} <span className="text-zinc-600">{count}</span>
-    </button>
+  const Card = ({ p }) => (
+    <div data-testid={`review-card-${p.name}`}
+      className={`group overflow-hidden rounded-xl border transition-all ${p.selectedForEdit ? "border-emerald-400/60 bg-emerald-400/[0.04]" : "border-zinc-800 bg-[#141418]"}`}>
+      <button data-testid={`open-viewer-${p.name}`} onClick={() => openViewer(p)} className="block w-full">
+        <div className="relative aspect-[3/2] w-full bg-zinc-900">
+          <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
+          <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-zinc-300 backdrop-blur">
+            {p.source === "manual" ? <><Hand className="h-3 w-3" /> Manual</> : <><Sparkles className="h-3 w-3 text-emerald-400" /> IA</>}
+          </span>
+          {p.selectedForEdit && (
+            <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-emerald-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-950" data-testid={`stars-${p.name}`}>
+              <Stars /> <span className="h-2.5 w-2.5 rounded-full bg-emerald-700" title="Verde" />
+            </span>
+          )}
+        </div>
+      </button>
+      <div className="flex items-center justify-between gap-2 px-3 py-2">
+        <div className="min-w-0">
+          <p className="truncate font-mono text-[11px] text-zinc-400">{p.name}</p>
+          <p className={`text-[11px] font-medium ${p.selectedForEdit ? "text-emerald-400" : "text-zinc-500"}`}>
+            {p.selectedForEdit ? "Seleccionada · 5★ + verde" : "No seleccionada"}
+          </p>
+        </div>
+        {p.selectedForEdit ? (
+          <button data-testid={`remove-${p.name}`} onClick={() => applyToggle(p.id)} title="Quitar de la selección"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-500/40 px-2 py-1 text-[11px] font-medium text-rose-300 hover:bg-rose-500/10"><X className="h-3 w-3" /> Quitar</button>
+        ) : (
+          <button data-testid={`add-${p.name}`} onClick={() => applyToggle(p.id)} title="Añadir a la selección"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-400 px-2 py-1 text-[11px] font-semibold text-zinc-950 hover:scale-[1.03]"><Plus className="h-3 w-3" /> Añadir</button>
+        )}
+      </div>
+    </div>
   );
 
   return (
     <section className="animate-fade-up" data-testid="review-step">
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-xl border border-zinc-800 bg-[#141418] p-5">
         <div>
-          <h2 className="font-display text-lg font-semibold">Revisa la selección</h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Toca cualquier foto para incluirla o excluirla de la cola de edición IA. Las verdes van a edición.
-            <span className="mt-1 block text-xs text-zinc-600">
-              La IA elige <span className="text-emerald-400">solo la mejor</span> de cada ráfaga (nitidez, ojos abiertos y sonrisa).
-              <span className="text-amber-400"> ⚠ Dudas</span> = empate real, se dejan un par para que decidas tú.
-            </span>
+          <h2 className="font-display text-lg font-semibold">Revisión y selección final</h2>
+          <p className="mt-1 max-w-2xl text-sm text-zinc-500">
+            La IA propone; tú decides. Las <span className="text-emerald-400">seleccionadas</span> reciben 5★ + etiqueta verde
+            y son las que se exportan al XMP. Las descartadas se conservan por si quieres recuperarlas.
           </p>
         </div>
-        <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-sm font-medium text-emerald-300" data-testid="review-count">
-          {selectedCount} en cola de edición
-        </div>
       </div>
 
-      {hasFaces && (
-        <div className="mt-4 rounded-xl border border-zinc-800 bg-[#141418] p-4" data-testid="review-filters">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500"><Filter className="h-3.5 w-3.5" /> Filtrar:</span>
-            <FilterChip id="all" label="Todas" count={counts.all} />
-            <FilterChip id="withpeople" label="Con personas" count={counts.withpeople} icon={User} />
-            <FilterChip id="group" label="Grupos" count={counts.group} icon={Users} />
-            <FilterChip id="nopeople" label="Sin personas" count={counts.nopeople} icon={UserX} />
-          </div>
-
-          {people.length > 0 && (
-            <div className="mt-4 border-t border-zinc-800 pt-4">
-              <p className="text-xs text-zinc-500">Protagonistas detectados · toca para filtrar, escribe para etiquetar (novia, novio…)</p>
-              <div className="mt-3 flex flex-wrap gap-3" data-testid="people-panel">
-                {people.map((person, i) => {
-                  const active = filter === `person:${person.id}`;
-                  return (
-                    <div key={person.id} data-testid={`person-${person.id}`}
-                      className={`flex items-center gap-2 rounded-xl border p-2 transition-colors ${active ? "border-emerald-400/60 bg-emerald-400/10" : "border-zinc-800 bg-[#1c1c22]"}`}>
-                      <button data-testid={`person-filter-${person.id}`} onClick={() => setFilter(active ? "all" : `person:${person.id}`)}
-                        className="h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-zinc-900">
-                        {person.thumb ? <img src={person.thumb} alt={nameOf(person.id, i)} className="h-full w-full object-cover" /> : <User className="m-auto mt-3 h-5 w-5 text-zinc-600" />}
-                      </button>
-                      <div className="min-w-0">
-                        <input data-testid={`person-name-${person.id}`} value={names[person.id] ?? ""} placeholder={`Persona ${i + 1}`}
-                          onChange={(e) => setNames((prev) => ({ ...prev, [person.id]: e.target.value }))}
-                          className="w-28 rounded-md border border-zinc-700 bg-[#101012] px-2 py-1 text-xs text-zinc-100 outline-none focus:border-emerald-400/60" />
-                        <p className="mt-0.5 text-[10px] text-zinc-500">{person.count} fotos</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {visible.map((p) => (
-          <PhotoCard key={p.id} p={p} onToggle={toggle} />
-        ))}
+      <div className="mt-4 flex items-center gap-2" data-testid="review-tabs">
+        <button data-testid="tab-selected" onClick={() => setTab("selected")}
+          className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === "selected" ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
+          Seleccionadas ({selected.length})
+        </button>
+        <button data-testid="tab-unselected" onClick={() => setTab("unselected")}
+          className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === "unselected" ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
+          No seleccionadas ({unselected.length})
+        </button>
       </div>
 
-      {visible.length === 0 && (
-        <p className="mt-6 text-sm text-zinc-500" data-testid="review-empty-filter">Ninguna foto coincide con este filtro.</p>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {list.map((p) => <Card key={p.id} p={p} />)}
+      </div>
+      {list.length === 0 && (
+        <p className="mt-6 text-sm text-zinc-500" data-testid="review-empty">
+          {tab === "selected" ? "No hay fotos en la selección. Añade alguna desde 'No seleccionadas'." : "No hay fotos descartadas."}
+        </p>
       )}
 
-      <button data-testid="review-continue-btn" disabled={!selectedCount}
+      <button data-testid="review-continue-btn" disabled={!selected.length}
         onClick={() => onContinue(photos)}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40">
-        Continuar a perfil de cámara <ArrowRight className="h-4 w-4" />
+        Continuar con {selected.length} seleccionadas <ArrowRight className="h-4 w-4" />
       </button>
+
+      {viewer && (
+        <PhotoViewer
+          list={list}
+          index={Math.max(0, list.findIndex((p) => p.id === viewer.id))}
+          onClose={() => setViewer(null)}
+          onNav={(d) => setViewer((v) => {
+            const cur = list.findIndex((p) => p.id === v.id);
+            const ni = Math.min(list.length - 1, Math.max(0, cur + d));
+            return { ...v, id: list[ni]?.id ?? v.id };
+          })}
+          onToggle={(id) => {
+            const next = applyToggle(id);
+            // tras togglear, la foto sale de la lista actual: fijar el visor en la posición equivalente
+            const newList = tab === "selected" ? next.filter((p) => p.selectedForEdit) : next.filter((p) => !p.selectedForEdit);
+            if (!newList.length) { setViewer(null); return; }
+            setViewer((v) => ({ ...v, id: newList[Math.min(newList.length - 1, Math.max(0, list.findIndex((p) => p.id === id)))].id }));
+          }}
+        />
+      )}
     </section>
   );
 }

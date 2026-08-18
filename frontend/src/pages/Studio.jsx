@@ -50,6 +50,19 @@ export default function Studio() {
     }
   };
 
+  // finalSelection = fuente de verdad. Guarda estado + origen (ai/manual) + rating/label por foto.
+  const persistFinal = (all) => persist({
+    finalSelection: all.map((p) => ({
+      filename: p.name,
+      selected: !!p.selectedForEdit,
+      source: p.source || "ai",
+      rating: p.selectedForEdit ? 5 : 0,
+      label: p.selectedForEdit ? "Green" : "",
+    })),
+    editQueueFilenames: all.filter((p) => p.selectedForEdit).map((p) => p.name),
+    reviewCompleted: true,
+  });
+
   const buildPayload = () => {
     const mode = presetInfo.precisionMode || "balanced";
     return {
@@ -93,14 +106,21 @@ export default function Studio() {
             // Reanudar selección: si el proyecto ya tenía una selección guardada por nombre de archivo,
             // la restauramos sobre la carpeta recién elegida en lugar de volver a analizar con IA.
             const st = project.rawai_state || {};
-            const saved = (st.editQueueFilenames?.length ? st.editQueueFilenames : st.selectionFilenames) || [];
-            if (saved.length) {
-              const set = new Set(saved);
+            const finalSel = st.finalSelection || [];
+            const savedNames = (st.editQueueFilenames?.length ? st.editQueueFilenames : st.selectionFilenames) || [];
+            if (finalSel.length || savedNames.length) {
               const all = analyzeFolder(f);
-              all.forEach((p) => { p.selectedForEdit = set.has(p.name); });
+              if (finalSel.length) {
+                // Restaurar decisiones finales (manual prevalece) sin re-ejecutar la IA.
+                const byName = new Map(finalSel.map((x) => [x.filename, x]));
+                all.forEach((p) => { const s = byName.get(p.name); if (s) { p.selectedForEdit = !!s.selected; p.source = s.source || "ai"; } else { p.selectedForEdit = false; p.source = "ai"; } });
+              } else {
+                const set = new Set(savedNames);
+                all.forEach((p) => { p.selectedForEdit = set.has(p.name); p.source = "ai"; });
+              }
               setPhotos(all);
               setSendPhotos(all.filter((p) => p.selectedForEdit));
-              toast.success("Selección restaurada", { description: `${set.size} fotos recuperadas del proyecto` });
+              toast.success("Selección final restaurada", { description: `${all.filter((p) => p.selectedForEdit).length} fotos en la selección` });
               setStep("review");
             } else {
               setStep("selection");
@@ -110,21 +130,25 @@ export default function Studio() {
 
         {step === "selection" && (
           <SelectionStep files={files} onContinue={async (p, ppl) => {
+            p.forEach((x) => { x.source = "ai"; }); // propuesta inicial de la IA
             setPhotos(p);
             setPeople(ppl || []);
-            await persist({ selectionCompleted: true, totalPhotos: p.length, selectionFilenames: p.filter((x) => x.selectedForEdit).map((x) => x.name) });
+            await persist({ selectionCompleted: true, totalPhotos: p.length });
+            await persistFinal(p);
             setStep("review");
           }} />
         )}
 
         {step === "review" && (
-          <ReviewStep initialPhotos={photos} people={people} onContinue={async (all) => {
-            setPhotos(all);
-            const queue = all.filter((x) => x.selectedForEdit);
-            setSendPhotos(queue);
-            await persist({ reviewCompleted: true, editQueueFilenames: queue.map((q) => q.name) });
-            setStep("profile");
-          }} />
+          <ReviewStep initialPhotos={photos} people={people}
+            onChange={(all) => { setPhotos(all); persistFinal(all); }}
+            onContinue={async (all) => {
+              setPhotos(all);
+              const queue = all.filter((x) => x.selectedForEdit);
+              setSendPhotos(queue);
+              await persistFinal(all);
+              setStep("profile");
+            }} />
         )}
 
         {step === "profile" && (
