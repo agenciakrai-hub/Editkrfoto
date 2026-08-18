@@ -199,6 +199,14 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Verificado**: jest **62/62** (nuevos: whiteBalance 5, basicEngine 9 — oscura→+EV sin quemar, clara→−EV, ya-correcta→~0 en los 13, valores distintos por foto, sin fotometría→neutral, no-HDR, auditoría). **Prueba crítica de aislamiento** (backend, sección 20): preset con basura en los 13 → salida con EXACTAMENTE los 13 de la IA + look no-básico (ToneCurve/HSL) conservado. **E2E API real** confirmado (Exposure +2.00→+0.35, Temperature 9000→5200, Vibrance 90→8, ToneCurve intacta, WhiteBalance Custom).
 - **PENDIENTE**: (1) persistir la auditoría (`aiBasicAdjustments`/confidences/`reasoningSummary`) en `rawai_state` para revisión y plugin; (2) usar caras de la Fase 1 para refinar metering/piel del WB; (3) validación del usuario con RAW reales (correctas/sub/sobre/contraluz/interiores/piel/vestido blanco/ventanas).
 
+### Iteración 27 (2026-08-18): Herramienta de VALIDACIÓN Fase 1 (observabilidad, no toca el motor)
+- Nueva página `/validation` (nav "Validación"): corre el pipeline REAL de selección (`analyzeFile → groupAndSelect → applyFaceLayer`) sobre una carpeta y muestra el desglose por secuencia SIN modificar la lógica (capa de diagnóstico).
+- **Resumen global** con comprobación automática de la regla fundamental: secuencias procesables, con selección, SELECTED, SELECTED+WARNING, sin selección → banner **verde (CUMPLIDA)** o **rojo (ERROR — N secuencias sin selección + ids)**. Desglose de warnings por tipo.
+- **Por secuencia** (expandible): nº fotos, seleccionada + confidence, estado, warnings; **por foto**: estado, motivo, selectionConfidence, technical/face/eyes/expression/sharpness/exposure scores, nº caras y **sujetos** (posición relativa, principal, ojos open/closed/partial/unknown, nitidez facial, visibilidad, confianza). Miniatura real de la seleccionada.
+- **Filtros** rápidos (todas / con selección / con warning / por tipo de warning) y **Exportar JSON** del informe completo para diagnóstico offline.
+- `src/lib/validationReport.js` (puro) + tests 4/4 (regla cumplida, detección de incumplimiento, no-procesables excluidas, detalle de sujetos). jest total **66/66**.
+- USO: el usuario ejecuta una sesión RAW real, revisa el informe/exporta JSON y devuelve casos problemáticos para afinar el motor. Validación final RAW→XMP→Lightroom la hace el usuario.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
