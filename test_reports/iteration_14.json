@@ -1,0 +1,50 @@
+{
+  "summary": "Iteration 14 — Security hardening validation. SSRF (3/3): blocks 169.254.169.254, localhost:8001, 127.0.0.1 — style status flips to 'failed' with 'URL no permitida (dirección interna)'. CORS (3/3): FastAPI middleware (validated against http://localhost:8001) correctly refuses to reflect evil.example.com and returns 'https://edit.krfoto.com' + credentials=true for allowed origins. ZIP path-traversal: basenames stripped, all entries end in .xmp with no '..' or path separators. XML escaping: '<', '>', '&' correctly escaped in both filename and camera_profile. Regression 6/6: projects CRUD, generate-xmp normal + preset preservation (crs:Look, crs:ToneCurveName kept, xmp:Rating=5 + xmp:Label=Green added, exposure updated), final-selection with structured items, learning profiles CRUD, selection/analyze. Overall: 14 passed, 1 failed, 1 xfailed.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/projects/{id}/generate-xmp",
+        "issue": "build_xmp uses xml.sax.saxutils.escape which does NOT escape '\"'. When a filename or camera_profile contains '\"', it is placed unescaped inside attr=\"...\" and breaks XML well-formedness (attribute closes prematurely — potential XML injection). Fix: use saxutils.quoteattr, or pass entities={'\"': '&quot;'} to escape, or apply .replace('\"','&quot;') after _xesc for attribute-value contexts (crs:RawFileName, crs:CameraProfile). Reproduced with filename='weird\".CR3' → ET.fromstring raises ParseError line 8 col 26.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "GET /api/projects/{id}/final-selection",
+        "issue": "Returns 500 (AttributeError: 'str' object has no attribute 'get' at server.py:324) when rawai_state.finalSelection is a list of strings instead of list of dicts. PATCH /state accepts any shape without validation. Fix: either normalize items in get_final_selection ([{'filename': x, 'selected': True} if isinstance(x,str) else x for x in items]) or validate at PATCH time.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_security.py",
+    "/app/test_reports/pytest/iteration14.xml"
+  ],
+  "action_items": [
+    "Escape double-quote in build_xmp: replace `_xesc(str(x))` in build_xmp (line 359-360) and _profile_to_xmp (line 1220,1224-1225) with `saxutils.quoteattr(str(x))[1:-1]` or `_xesc(str(x)).replace('\"','&quot;')` since values are embedded in attr=\"...\". Same applies wherever _xesc output feeds an attribute value.",
+    "Harden GET /api/projects/{id}/final-selection at server.py:324 to handle non-dict items gracefully (e.g., normalize strings to {filename, selected:True}).",
+    "Optional: preview URL (Kubernetes ingress at ai-xmp-gen.preview.emergentagent.com) overrides FastAPI CORS headers with ACAO:* — the app-level CORS is correct, but production deployment must ensure the ingress does NOT override with wildcard when credentials are used."
+  ],
+  "critical_code_review_comments": [
+    "SSRF guard (_assert_safe_url) is correctly wired into scrape_gallery_images and download_images_b64; also correctly re-validates after HTTP redirect in _fetch (line 1058-1059). Good defense-in-depth.",
+    "CORS: `allow_credentials=not _cors_wildcard` correctly prevents the '*' + credentials footgun. Explicit origin list from env, no reflection.",
+    "ZIP path-traversal: base = fn.rsplit('/',1)[-1].rsplit('\\\\',1)[-1].rsplit('.',1)[0] correctly basenames both / and \\ separators. Applied in xmp_entries (line 473, 479) and _profile_to_xmp entries loop (line 1257-1261).",
+    "XML escaping is INCOMPLETE for attribute contexts: xml.sax.saxutils.escape only handles <, >, & — it leaves '\"' and \"'\" untouched. Since _xesc output is placed inside attr=\"...\", any '\"' in filename/camera_profile/profile name/model breaks XML. Use saxutils.quoteattr or extend the escape.",
+    "server.py is now 1299 lines — module split still recommended (repeated from prior iterations)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_security.py"
+  ],
+  "success_rate": {
+    "backend": "88% (14/16, 1 xfail documented) — SSRF 3/3, CORS 3/3, XMP hardening 3/4 (\" escape bug), regression 5/5 + 1 xfail"
+  },
+  "test_credentials": "Seeded ephemeral user + session (test_session_iter14_1787082629925) in test_database; cleaned up after run.",
+  "seed_data_creation": "1 user + 1 session created and deleted. Tests created + deleted TEST_iter14_xmp, TEST_iter14_reg projects, TEST_iter14_prof learning profile, and 3 TEST_ssrf_* photographer_styles.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_iteration14_security.py requires TOKEN_A + REACT_APP_BACKEND_URL env vars (seed a session per /app/memory/test_credentials.md). CORS tests hit http://localhost:8001 directly because the preview Kubernetes ingress overrides ACAO with '*' — validating the FastAPI middleware, not ingress. If main agent fixes the two backend bugs, remove @pytest.mark.xfail on test_final_selection_500_when_items_are_strings and re-run.",
+  "rca_of_the_issues": {
+    "xml_double_quote": "server.py line 17 imports `from xml.sax.saxutils import escape as _xesc`. saxutils.escape's default entities dict = {'&':'&amp;','<':'&lt;','>':'&gt;'} — does NOT include '\"' or \"'\". In build_xmp (line 359-360) the escaped filename is inserted as `crs:RawFileName=\"{filename}\"`. A '\"' in the original filename passes through _xesc unchanged and then closes the attribute prematurely, producing malformed XML and enabling XML attribute injection (e.g., filename='x\" evil=\"y' would inject an attribute). Mitigation: `filename = _xesc(str(filename)).replace('\"', '&quot;')` or use `saxutils.quoteattr(str(filename))[1:-1]`.",
+    "final_selection_500": "get_final_selection (server.py:316-331) reads state.get('finalSelection') or [] then does `[x for x in items if x.get('selected')]`. PATCH /state (server.py:301-313) does `state.update(patch)` with zero validation, so any client can set finalSelection to a list of strings. Reproduce: PATCH /state {finalSelection:['a.CR3']} → GET /final-selection → 500. Mitigation: normalize items = [{'filename':x,'selected':True} if isinstance(x,str) else x for x in items] before the comprehension."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "summary": "Frontend-only regression after adding /app/frontend/src/lib/dngXmp.js and its import in AutoBasic.jsx. Seeded a session cookie (session_token, httpOnly/secure/SameSite=None) and visited /auto-basic, /dashboard, /styles, /learning, /engine-lab, /profiles on the public preview URL. All routes returned HTTP 200 and rendered. /auto-basic shows heading 'Auto básicos → XMP', empty-state, and all required data-testids: autobasic-pick-folder-btn, autobasic-mode-conservative/balanced/aggressive, autobasic-profile-input, autobasic-empty. Nav 'Auto XMP' (nav-autobasic-btn) is present and correctly navigates to /auto-basic. Mode switch click and camera-profile input edit work (value updates to 'Camera Neutral'). No JS runtime errors and no pageerror events; no console errors attributable to the new dngXmp import. The only console noise was a handful of ERR_CONNECTION_CLOSED entries for external resource fetches (unrelated to app JS). Folder upload / DNG embedding was intentionally NOT exercised (per request; covered by jest unit tests 3/3).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "AutoBasic.jsx exportZip swallows embedXmpInDng errors with an empty `catch {}` (line 59). Falling back to a sidecar is fine, but at minimum log to console.warn or surface a toast so DNG-embed regressions are noticeable — otherwise a broken embed silently degrades to sidecars, which is the exact bug this feature is trying to fix.",
+    "isDng is duplicated (defined locally in AutoBasic.jsx and likely useful elsewhere). Consider exporting it from src/lib/dngXmp.js alongside embedXmpInDng for DRY.",
+    "The input attributes `webkitdirectory=\"\" directory=\"\"` should be `webkitdirectory directory` (boolean); React may warn on non-standard DOM attribute casing. Not blocking."
+  ],
+  "updated_files": [],
+  "success_rate": { "frontend": "100% (6/6 routes render, all Auto XMP testids present, no runtime errors)" },
+  "test_credentials": "Ephemeral session test_session_iter16_1787083376894 in test_database (created + deleted).",
+  "seed_data_creation": "1 user (qa.raw@example.com) + 1 session created and deleted after run.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "DNG binary path is covered by /app/frontend/src/lib/dngXmp.test.js (3/3). This iteration only verified UI render + import safety after adding embedXmpInDng import to AutoBasic.jsx. To exercise the actual embed end-to-end, add a jest/vitest test that feeds a synthetic mini-TIFF (II* header, IFD0 with tag 700 pointing to a small XMP block) into embedXmpInDng and asserts the returned bytes contain the new xpacket and Rating=5/Label=Green.",
+  "rca_of_the_issue": "N/A — pure render/regression pass; no runtime issues introduced by the new dngXmp import."
+}

@@ -164,6 +164,20 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - No se tocó el motor de selección (puntuación/ráfagas/caras/ojos/sonrisa intactos).
 - NOTA: el panel de filtros por protagonista (iter.16) NO se muestra en la nueva revisión por pestañas (el reconocimiento sigue corriendo); se puede re-añadir si se desea. Flujo con RAW real: pendiente prueba del usuario.
 
+### Iteración 23 (2026-08-17): Auditoría de seguridad — correcciones (verificadas 17/17)
+- SSRF: `_assert_safe_url` aplicado en `scrape_gallery_images` y `download_images_b64` (bloquea IP internas/metadata). Verificado rechaza 169.254.169.254 / localhost / 127.0.0.1.
+- CORS: `CORS_ORIGINS` explícito (edit.krfoto.com + preview); `allow_credentials=False` si comodín. No refleja orígenes arbitrarios con credenciales.
+- XML: `_xesc` (incluye `&quot;`) en `build_xmp` (filename/camera_profile) y `_profile_to_xmp`; ruta preset con `_set_xmp_meta` sin borrar campos.
+- ZIP: nombres de entrada saneados a basename (sin path traversal).
+- `final-selection` blindado ante entradas no-dict. Testing_agent iteration_15: 100% (17/17), sin issues.
+
+### Iteración 24 (2026-08-17): Fix DNG — ajustes no visibles tras actualizar metadatos
+- Causa: Lightroom IGNORA los sidecar `.xmp` para DNG (los ajustes deben ir DENTRO del `.dng`).
+- Fix: `dngXmp.embedXmpInDng` inserta el XMP (básicos + `xmp:Rating=5` + `xmp:Label=Green`) dentro del DNG re-apuntando la etiqueta TIFF 700 (append seguro, sin reescritura in situ). CR3/otros mantienen sidecar `.xmp`.
+- Conectado en la herramienta **Auto XMP** (`/auto-basic`): DNG → `.dng` con XMP embebido; resto → `.xmp`.
+- Verificado: unit tests dngXmp 3/3 (tag 700 apunta al nuevo XMP con crs+rating+label; falla limpio si no es TIFF) + testing_agent frontend 6/6 rutas sin errores. Validación final en Lightroom: la hace el usuario.
+- PENDIENTE: conectar el embebido DNG también en el flujo de Studio (ReportStep, con presets) — hoy Studio genera ZIP en backend (sidecars); DNG en Studio requiere procesar el archivo en cliente. Compatible con el plugin vía `final-selection`.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

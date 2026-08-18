@@ -1,0 +1,25 @@
+{
+  "summary": "Iteration 15 — Retest of the two fixes from iter14. Both RESOLVED. (1) build_xmp now escapes '\"' via _xesc(str(x), {'\"':'&quot;'}) at server.py:359-360 → XMP with filename 'weird\"<>&.CR3' and camera_profile 'Adobe \"quoted\" <x>&y' parses cleanly via ElementTree, contains &quot; (no bare `weird\"`), retains xmp:Rating=5, xmp:Label=Green, and all <>& escaped. Normal filenames (IMG_0001.CR3) and preset_xmp (crs:Look/ToneCurveName preserved, exposure updated to +0.40) unaffected. (2) get_final_selection at server.py:323 now filters `isinstance(x, dict)` → PATCH /state with finalSelection=['a.CR3','b.CR3'] no longer 500s; GET returns 200 with items=[], selected_count=0. Recovery with proper dicts still works (selected_count=1). SSRF still blocks 169.254.169.254, localhost:8001, 127.0.0.1 (status='failed'). CORS still refuses evil.example.com, reflects edit.krfoto.com + credentials=true. Learning profiles CRUD + /selection/analyze OK. 17/17 passed.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": { "ui_bugs": [], "integration_issues": [], "design_issues": [] },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration14_security.py",
+    "/app/test_reports/pytest/iteration15.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Fix 1 is minimal and correct: passing entities dict to xml.sax.saxutils.escape adds '\"'→'&quot;' on top of the default &, <, > mapping. Applied at build_xmp (server.py:359-360). Note: _profile_to_xmp (lines 1220,1224-1225) still uses .replace('\"',\"'\") which coerces quotes to apostrophes — acceptable but inconsistent; prefer the same &quot; escape for parity.",
+    "Fix 2 is defensive but silent: get_final_selection filters non-dict items with `isinstance(x, dict)`. Consider also validating at PATCH /state (Pydantic) or returning a warning field so clients notice bad payloads. Current behavior silently drops strings — safe, but hides client bugs.",
+    "server.py is now 1299+ lines — module split still recommended (carry-over from prior iterations)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration14_security.py"
+  ],
+  "success_rate": { "backend": "100% (17/17)" },
+  "test_credentials": "Ephemeral session test_session_iter15_1787082987782 in test_database (created + deleted).",
+  "seed_data_creation": "1 user + 1 session created and deleted. Test-scoped projects/profiles cleaned up in teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Both iter14 bugs are fixed. Removed the @pytest.mark.xfail and added two positive assertions: (a) &quot; must be present + no raw `weird\"` leak; (b) GET /final-selection returns 200 with selected_count=0 for list-of-strings and works normally for list-of-dicts. Tests require TOKEN_A env var (seed a session per /app/memory/test_credentials.md).",
+  "rca_of_the_issue": "N/A — both root causes from iter14 (xml.sax.saxutils.escape default entities lack '\"' → attribute injection; get_final_selection called .get() on strings → 500) are addressed and verified."
+}

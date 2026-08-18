@@ -14,6 +14,7 @@ import logging
 import uuid
 import requests
 from urllib.parse import urljoin
+from xml.sax.saxutils import escape as _xesc
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
@@ -319,7 +320,7 @@ async def get_final_selection(project_id: str, user: User = Depends(get_current_
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
     state = doc.get("rawai_state", {}) or {}
-    items = state.get("finalSelection") or []
+    items = [x for x in (state.get("finalSelection") or []) if isinstance(x, dict)]
     selected = [x for x in items if x.get("selected")]
     return {
         "project_id": project_id,
@@ -355,6 +356,8 @@ CRS_MAP = {
 
 
 def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, process_precision: str) -> str:
+    filename = _xesc(str(filename), {'"': "&quot;"})          # evita inyección XML (incluye comillas)
+    camera_profile = _xesc(str(camera_profile), {'"': "&quot;"})
     crs_lines = ['   crs:Version="15.0"',
                  f'   crs:ProcessVersion="11.0"',
                  f'   crs:CameraProfile="{camera_profile}"',
@@ -467,13 +470,13 @@ def xmp_entries(req_or_job, camera_profile, precision):
     if photos:
         for p in photos:
             fn = p["filename"]
-            base = fn.rsplit(".", 1)[0]
+            base = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].rsplit(".", 1)[0] or "foto"  # sin traversal
             entries.append((f"{base}.xmp", build_photo_xmp(fn, p.get("basic") or {}, creative, preset_xmp, camera_profile, precision)))
     else:
         # compatibilidad: mismos parámetros para todas
         params = req_or_job.get("parameters") or {}
         for fn in (req_or_job.get("filenames") or []):
-            base = fn.rsplit(".", 1)[0]
+            base = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].rsplit(".", 1)[0] or "foto"
             entries.append((f"{base}.xmp", build_xmp(fn, params, camera_profile or "Adobe Standard", precision or "balanced")))
     return entries
 
@@ -604,6 +607,7 @@ IMG_EXT_RE = re.compile(r"\.(jpe?g|png|webp)(\?|$)", re.I)
 
 
 def scrape_gallery_images(url, limit=12):
+    _assert_safe_url(url)  # SSRF guard: bloquea IP internas/metadata
     headers = {"User-Agent": "Mozilla/5.0 (compatible; RAWAIStudio/1.0)"}
     r = requests.get(url, headers=headers, timeout=20)
     r.raise_for_status()
@@ -641,6 +645,7 @@ def download_images_b64(urls, limit=12):
         if len(out) >= limit:
             break
         try:
+            _assert_safe_url(u)  # SSRF guard por cada imagen
             resp = requests.get(u, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
             ctype = resp.headers.get("content-type", "")
             if not ctype.startswith("image/") or "svg" in ctype or "gif" in ctype:
@@ -1212,12 +1217,12 @@ async def delete_extracted_profile(profile_id: str, user: User = Depends(get_cur
 
 
 def _profile_to_xmp(p):
-    name = (p.get("display_name") or p.get("name") or "Perfil").replace('"', "'")
+    name = _xesc((p.get("display_name") or p.get("name") or "Perfil").replace('"', "'"))
     lines = ['   crs:Version="15.0"', f'   crs:Name="{name}"']
     if p.get("profile_type") == "camera_profile":
         lines.append(f'   crs:CameraProfile="{name}"')
-    make = (p.get("manufacturer") or "").replace('"', "'")
-    model = (p.get("camera_model") or "").replace('"', "'")
+    make = _xesc((p.get("manufacturer") or "").replace('"', "'"))
+    model = _xesc((p.get("camera_model") or "").replace('"', "'"))
     tiff = ""
     if make:
         tiff += f'\n   tiff:Make="{make}"'
@@ -1260,10 +1265,12 @@ async def export_profiles_zip(user: User = Depends(get_current_user)):
         headers={"Content-Disposition": 'attachment; filename="catalogo_perfiles_xmp.zip"'})
 app.include_router(api_router)
 
+_cors_origins = [o for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o]
+_cors_wildcard = '*' in _cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_credentials=not _cors_wildcard,  # nunca combinar '*' con credenciales (robo cross-site)
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
