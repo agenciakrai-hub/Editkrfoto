@@ -36,6 +36,7 @@ export default function SelectionStep({ files, onContinue }) {
           file: it.file,
           basic: it.metrics?.basic || DEFAULT_BASIC,
           photometrics: it.metrics?.photometrics || null,
+          color: it.metrics?.color || null,
           isBest: it.isBest,
           selectedForEdit: it.selectedForEdit,
         }));

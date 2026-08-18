@@ -11,8 +11,7 @@ import PresetParamsStep from "@/components/studio/PresetParamsStep";
 import ProcessingModeChoice from "@/components/studio/ProcessingModeChoice";
 import ProcessingStep from "@/components/studio/ProcessingStep";
 import ReportStep from "@/components/studio/ReportStep";
-import { creativeParametersFromConfig, AUTO_BASIC_PARAMS } from "@/lib/paramDefs";
-import { computeBasic } from "@/lib/rawaistudio/exposureEngine";
+import { computeAiBasics } from "@/lib/rawaistudio/basicEngine";
 import { analyzeFolder } from "@/lib/rawSelection";
 import api from "@/lib/api";
 
@@ -66,13 +65,17 @@ export default function Studio() {
   const buildPayload = () => {
     const mode = presetInfo.precisionMode || "balanced";
     return {
-      // Motor v2: básicos por foto desde la fotometría (ponderada al sujeto) + modo de precisión.
-      // Si una foto no tiene fotometría (p.ej. selección restaurada) se usa su base o la base técnica.
+      // MOTOR IA: los 13 básicos por foto (exposición/tono + WB + presencia + color),
+      // calculados individualmente desde la fotometría y el color. "No tocar" = 0 / As Shot.
       photos: sendPhotos.map((p) => ({
         filename: p.name,
-        basic: p.photometrics ? computeBasic(p.photometrics, mode) : (p.basic || AUTO_BASIC_PARAMS),
+        ai_basics: computeAiBasics(
+          { photometrics: p.photometrics, color: p.color },
+          { mode, deadzone: "prudent", wbStrength: 0.5, subjectDetected: (p.faceCount || 0) > 0 }
+        ).aiBasicAdjustments,
       })),
-      creative_params: presetInfo.presetXmpText ? {} : creativeParametersFromConfig(presetInfo.config),
+      // El preset/estilo NUNCA aporta básicos: capa creativa vacía por diseño.
+      creative_params: {},
       preset_xmp: presetInfo.presetXmpText || null,
       camera_profile: profileChoice.profile,
       precision_mode: mode,

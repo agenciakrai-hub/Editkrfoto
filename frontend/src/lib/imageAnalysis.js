@@ -35,13 +35,22 @@ function metricsFromBitmap(bmp) {
   const hist = new Array(256).fill(0);
   const histCenter = new Array(256).fill(0);
   let sum = 0, totalCenter = 0;
+  let sumR = 0, sumG = 0, sumB = 0;                 // color medio global (para WB)
+  let skinR = 0, skinG = 0, skinB = 0, skinCount = 0; // referencia de piel (para WB con personas)
   const cx = (w - 1) / 2, cy = (h - 1) / 2;
   const maxD2 = cx * cx + cy * cy || 1;
   const SIG2 = 2 * 0.42 * 0.42; // gaussiana radial normalizada (fotómetro ponderado al centro)
   for (let i = 0, p = 0; i < d.length; i += 4, p++) {
-    const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    const r = d[i], gg = d[i + 1], b = d[i + 2];
+    const g = 0.299 * r + 0.587 * gg + 0.114 * b;
     const gi = Math.min(255, g | 0);
     gray[p] = g; sum += g; hist[gi]++;
+    sumR += r; sumG += gg; sumB += b;
+    // Detección de piel por cromaticidad (heurística RGB clásica): referencia de WB.
+    const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+    if (r > 95 && gg > 40 && b > 20 && (mx - mn) > 15 && Math.abs(r - gg) > 15 && r > gg && r > b) {
+      skinR += r; skinG += gg; skinB += b; skinCount++;
+    }
     const x = p % w, y = (p / w) | 0;
     const dx = x - cx, dy = y - cy;
     const wgt = Math.exp(-((dx * dx + dy * dy) / maxD2) / SIG2);
@@ -88,7 +97,14 @@ function metricsFromBitmap(bmp) {
   let hash = 0n;
   for (let i = 0; i < 64; i++) if (g8[i] > m8) hash |= (1n << BigInt(i));
 
-  return { sharpness, exposure, hash, luma: avg, shadowClip, highClip,
+  const color = {
+    meanR: sumR / total, meanG: sumG / total, meanB: sumB / total,
+    skinR: skinCount ? skinR / skinCount : 0,
+    skinG: skinCount ? skinG / skinCount : 0,
+    skinB: skinCount ? skinB / skinCount : 0,
+    skinRatio: skinCount / total,
+  };
+  return { sharpness, exposure, hash, luma: avg, shadowClip, highClip, color,
     basic: autoToneFromHistogram(hist, total),
     photometrics: computePhotometrics({ histGlobal: hist, totalGlobal: total, histCenter, totalCenter }) };
 }

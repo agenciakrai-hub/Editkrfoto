@@ -1,27 +1,32 @@
-// Modelo de edición:
-//  - AJUSTES BÁSICOS (luz/tono + balance de blancos): SIEMPRE automáticos por la IA.
-//    El fotógrafo no los toca; presets y estilos NO los modifican.
-//  - AJUSTES CREATIVOS (claridad, vibración, saturación): la capa que aportan los
-//    presets y los estilos de otros fotógrafos.
+// Modelo de edición (Fase 2 — regla del usuario):
+//  - MOTOR IA = AJUSTES BÁSICOS: los 13 parámetros SIEMPRE los calcula la IA por foto.
+//    (Temperature, Tint, Exposure, Contrast, Highlights, Shadows, Whites, Blacks,
+//     Texture, Clarity, Dehaze, Vibrance, Saturation).
+//  - PRESET / ESTILO = resto del look (curvas, HSL, color grading, calibración, efectos…)
+//    y NUNCA los 13 básicos. El aislamiento se garantiza en el backend.
 export const PARAM_DEFS = [
+  { key: "temperature", label: "Temperatura", min: 2000, max: 12000, step: 50, def: 5500, unit: "K", basic: true },
+  { key: "tint", label: "Tinte", min: -150, max: 150, step: 1, def: 0, basic: true },
   { key: "exposure", label: "Exposición", min: -5, max: 5, step: 0.05, def: 0, unit: "EV", basic: true },
   { key: "contrast", label: "Contraste", min: -100, max: 100, step: 1, def: 0, basic: true },
   { key: "highlights", label: "Altas luces", min: -100, max: 100, step: 1, def: 0, basic: true },
   { key: "shadows", label: "Sombras", min: -100, max: 100, step: 1, def: 0, basic: true },
   { key: "whites", label: "Blancos", min: -100, max: 100, step: 1, def: 0, basic: true },
   { key: "blacks", label: "Negros", min: -100, max: 100, step: 1, def: 0, basic: true },
-  { key: "temperature", label: "Temperatura", min: 2000, max: 12000, step: 50, def: 5500, unit: "K", basic: true },
-  { key: "tint", label: "Tinte", min: -150, max: 150, step: 1, def: 0, basic: true },
-  { key: "clarity", label: "Claridad", min: -100, max: 100, step: 1, def: 0, basic: false },
-  { key: "vibrance", label: "Vibración", min: -100, max: 100, step: 1, def: 0, basic: false },
-  { key: "saturation", label: "Saturación", min: -100, max: 100, step: 1, def: 0, basic: false },
+  { key: "texture", label: "Textura", min: -100, max: 100, step: 1, def: 0, basic: true },
+  { key: "clarity", label: "Claridad", min: -100, max: 100, step: 1, def: 0, basic: true },
+  { key: "dehaze", label: "Borrar neblina", min: -100, max: 100, step: 1, def: 0, basic: true },
+  { key: "vibrance", label: "Vibración", min: -100, max: 100, step: 1, def: 0, basic: true },
+  { key: "saturation", label: "Saturación", min: -100, max: 100, step: 1, def: 0, basic: true },
 ];
 
-export const BASIC_KEYS = PARAM_DEFS.filter((p) => p.basic).map((p) => p.key);
-export const CREATIVE_KEYS = PARAM_DEFS.filter((p) => !p.basic).map((p) => p.key);
+// Los 13 parámetros de propiedad EXCLUSIVA del Motor IA.
+export const AI_BASIC_KEYS = PARAM_DEFS.map((p) => p.key);
+export const BASIC_KEYS = AI_BASIC_KEYS;
+export const CREATIVE_KEYS = []; // ya no hay capa creativa: el preset no toca los 13
 
-// Base técnica que la IA aplica automáticamente a los ajustes básicos (nivelado por foto).
-export const AUTO_BASIC_PARAMS = { exposure: 0.10, highlights: -15, shadows: 15, whites: 5, blacks: -5 };
+// Deprecado: ya no se aplica un preset básico genérico (cada foto se calcula individualmente).
+export const AUTO_BASIC_PARAMS = {};
 
 export function defaultParameterConfig() {
   const cfg = {};
@@ -29,25 +34,15 @@ export function defaultParameterConfig() {
   return cfg;
 }
 
-// Solo los parámetros CREATIVOS habilitados (lo que aportan preset/estilo).
-export function creativeParametersFromConfig(config) {
-  const out = {};
-  for (const p of PARAM_DEFS) {
-    if (!p.basic && config[p.key]?.enabled) out[p.key] = config[p.key].value;
-  }
-  return out;
-}
+// El preset/estilo NO aporta ninguno de los 13 → mapa creativo vacío.
+export function creativeParametersFromConfig() { return {}; }
+export function fullParametersFromConfig() { return {}; }
 
-// Lo que se envía al XMP: base automática de la IA + capa creativa del preset/estilo.
-export function fullParametersFromConfig(config) {
-  return { ...AUTO_BASIC_PARAMS, ...creativeParametersFromConfig(config) };
-}
-
-// Descarta cualquier clave básica de un mapa de parámetros (presets/estilos no tocan lo básico).
+// Elimina CUALQUIER clave de los 13 básicos de un mapa de parámetros (presets/estilos no los tocan).
 export function pickCreative(params) {
   const out = {};
   for (const [k, v] of Object.entries(params || {})) {
-    if (CREATIVE_KEYS.includes(k)) out[k] = v;
+    if (!AI_BASIC_KEYS.includes(k)) out[k] = v;
   }
   return out;
 }
@@ -58,18 +53,12 @@ export const PRECISION_MODES = [
   { key: "aggressive", label: "Agresivo", desc: "Correcciones amplias (±1.0 EV). Máximo impacto." },
 ];
 
-// Presets de estilo: SOLO capa creativa (claridad, vibración, saturación).
+// Presets de "look" (el resto de parámetros): NO tocan los 13 básicos del Motor IA.
 export const STYLE_PRESETS = [
-  { name: "Boda Clara", desc: "Luminoso, aireado y limpio", apply: { clarity: 8, vibrance: 12 } },
-  { name: "Cálido Atardecer", desc: "Tonos dorados y románticos", apply: { clarity: 5, vibrance: 20, saturation: 6 } },
-  { name: "Editorial B/N", desc: "Blanco y negro con carácter", apply: { clarity: 22, saturation: -100 } },
-  { name: "Natural", desc: "Fiel a la escena, sutil", apply: { clarity: 4, vibrance: 6 } },
+  { name: "Boda Clara", desc: "Luminoso, aireado y limpio", apply: {} },
+  { name: "Cálido Atardecer", desc: "Tonos dorados y románticos", apply: {} },
+  { name: "Editorial B/N", desc: "Blanco y negro con carácter", apply: {} },
+  { name: "Natural", desc: "Fiel a la escena, sutil", apply: {} },
 ];
 
-export function applyPreset(config, preset) {
-  const next = { ...config };
-  for (const [key, value] of Object.entries(pickCreative(preset.apply))) {
-    next[key] = { enabled: true, value };
-  }
-  return next;
-}
+export function applyPreset(config) { return { ...config }; }

@@ -1,16 +1,18 @@
-// Construye un sidecar XMP compatible con Lightroom / Camera Raw a partir de parámetros crs.
+// Construye un sidecar XMP compatible con Lightroom / Camera Raw a partir de los 13 básicos IA.
 const CRS_MAP = {
+  temperature: "Temperature",
+  tint: "Tint",
   exposure: "Exposure2012",
   contrast: "Contrast2012",
   highlights: "Highlights2012",
   shadows: "Shadows2012",
   whites: "Whites2012",
   blacks: "Blacks2012",
+  texture: "Texture",
   clarity: "Clarity2012",
+  dehaze: "Dehaze",
   vibrance: "Vibrance",
   saturation: "Saturation",
-  temperature: "Temperature",
-  tint: "Tint",
 };
 
 function fmt(key, value) {
@@ -20,11 +22,12 @@ function fmt(key, value) {
 }
 
 export function buildStyleXmp(name, params, cameraProfile = "Adobe Standard") {
+  const hasWB = params && params.temperature !== undefined && params.temperature !== null;
   const crsLines = [
     '   crs:Version="15.0"',
     '   crs:ProcessVersion="11.0"',
     `   crs:CameraProfile="${cameraProfile}"`,
-    '   crs:WhiteBalance="As Shot"',
+    `   crs:WhiteBalance="${hasWB ? "Custom" : "As Shot"}"`,
     '   crs:HasSettings="True"',
   ];
   for (const [key, attr] of Object.entries(CRS_MAP)) {

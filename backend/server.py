@@ -85,7 +85,8 @@ class ProjectUpdate(BaseModel):
 
 class PhotoBasic(BaseModel):
     filename: str
-    basic: Dict[str, float] = Field(default_factory=dict)
+    basic: Dict[str, float] = Field(default_factory=dict)     # compat (6 básicos v2)
+    ai_basics: Dict[str, Any] = Field(default_factory=dict)   # Motor IA: los 13 básicos (temp/tint pueden ser null)
 
 
 class XmpRequest(BaseModel):
@@ -341,36 +342,39 @@ async def delete_project(project_id: str, user: User = Depends(get_current_user)
 
 # ----------------------------- XMP generation -----------------------------
 CRS_MAP = {
+    "temperature": "Temperature",
+    "tint": "Tint",
     "exposure": "Exposure2012",
     "contrast": "Contrast2012",
     "highlights": "Highlights2012",
     "shadows": "Shadows2012",
     "whites": "Whites2012",
     "blacks": "Blacks2012",
+    "texture": "Texture",
     "clarity": "Clarity2012",
+    "dehaze": "Dehaze",
     "vibrance": "Vibrance",
     "saturation": "Saturation",
-    "temperature": "Temperature",
-    "tint": "Tint",
 }
 
 
 def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, process_precision: str) -> str:
     filename = _xesc(str(filename), {'"': "&quot;"})          # evita inyección XML (incluye comillas)
     camera_profile = _xesc(str(camera_profile), {'"': "&quot;"})
+    has_wb = params.get("temperature") is not None
     crs_lines = ['   crs:Version="15.0"',
                  f'   crs:ProcessVersion="11.0"',
                  f'   crs:CameraProfile="{camera_profile}"',
-                 '   crs:WhiteBalance="As Shot"',
+                 f'   crs:WhiteBalance="{"Custom" if has_wb else "As Shot"}"',
                  f'   crs:HasSettings="True"']
     for key, value in params.items():
         attr = CRS_MAP.get(key)
-        if not attr:
+        if not attr or value is None:
             continue
-        if key in ("temperature", "tint"):
-            crs_lines.append(f'   crs:{attr}="{int(round(value))}"')
+        if key == "exposure":
+            crs_lines.append(f'   crs:{attr}="{float(value):+.2f}"')
         else:
-            crs_lines.append(f'   crs:{attr}="{value:+.2f}"' if attr.endswith("2012") and key == "exposure" else f'   crs:{attr}="{int(round(value))}"')
+            crs_lines.append(f'   crs:{attr}="{int(round(float(value)))}"')
     crs_block = "\n".join(crs_lines)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
     return f'''<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="RAW AI Studio 1.0">
@@ -400,6 +404,22 @@ BASIC_ATTR_MAP = {
     "blacks": "Blacks2012",
 }
 
+# Los 13 parámetros de PROPIEDAD EXCLUSIVA del Motor IA (aislamiento estricto del preset).
+AI_BASIC_ATTR_MAP = {
+    "temperature": "Temperature", "tint": "Tint",
+    "exposure": "Exposure2012", "contrast": "Contrast2012",
+    "highlights": "Highlights2012", "shadows": "Shadows2012",
+    "whites": "Whites2012", "blacks": "Blacks2012",
+    "texture": "Texture", "clarity": "Clarity2012", "dehaze": "Dehaze",
+    "vibrance": "Vibrance", "saturation": "Saturation",
+}
+
+# Atributos crs que se ELIMINAN de cualquier preset ANTES de inyectar los de la IA.
+STRIP_CRS_NAMES = list(dict.fromkeys(list(AI_BASIC_ATTR_MAP.values()) + [
+    "Exposure", "Contrast", "Highlights", "Shadows", "Whites", "Blacks", "Clarity",
+    "WhiteBalance", "IncrementalTemperature", "IncrementalTint", "AutoWhiteVersion",
+]))
+
 
 def _fmt_basic(key, value):
     if key == "exposure":
@@ -425,6 +445,28 @@ def _set_crs_attr(xmp, attr, value):
     return xmp[:insert_at] + f'\n   crs:{attr}="{value}"' + xmp[insert_at:]
 
 
+def _strip_crs_attrs(xmp, names):
+    # Elimina crs:Name="..." (atributo), <crs:Name>...</crs:Name> y <crs:Name/> (elemento).
+    for name in names:
+        xmp = re.sub(r'\s*crs:' + re.escape(name) + r'="[^"]*"', '', xmp)
+        xmp = re.sub(r'\s*<crs:' + re.escape(name) + r'>.*?</crs:' + re.escape(name) + r'>', '', xmp, flags=re.DOTALL)
+        xmp = re.sub(r'\s*<crs:' + re.escape(name) + r'/>', '', xmp)
+    return xmp
+
+
+def _set_wb(xmp, value):
+    if re.search(r'crs:WhiteBalance="[^"]*"', xmp):
+        return re.sub(r'crs:WhiteBalance="[^"]*"', f'crs:WhiteBalance="{value}"', xmp, count=1)
+    idx = xmp.find("<rdf:Description")
+    if idx == -1:
+        return xmp
+    end = xmp.find(">", idx)
+    if end == -1:
+        return xmp
+    insert_at = end - 1 if xmp[end - 1] == "/" else end
+    return xmp[:insert_at] + f'\n   crs:WhiteBalance="{value}"' + xmp[insert_at:]
+
+
 def _set_xmp_meta(xmp):
     # Inserta/actualiza xmp:Rating="5" y xmp:Label="Green" sin borrar ningún otro campo del sidecar.
     if "xmlns:xmp=" not in xmp:
@@ -446,20 +488,22 @@ def _set_xmp_meta(xmp):
     return xmp
 
 
-def build_photo_xmp(filename, basic, creative_params, preset_xmp, camera_profile, precision):
-    # Si hay un preset Lightroom completo: se conserva TODO su look (curvas, HSL, textura…)
-    # y solo se SUSTITUYEN los básicos de luz por la corrección automática por foto de la IA.
+def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, precision):
+    # AISLAMIENTO ESTRICTO: los 13 básicos son propiedad EXCLUSIVA del Motor IA.
+    ai = ai or {}
     if preset_xmp:
-        xmp = preset_xmp
-        for key, attr in BASIC_ATTR_MAP.items():
-            if basic and key in basic and basic[key] is not None:
-                xmp = _set_crs_attr(xmp, attr, _fmt_basic(key, basic[key]))
+        # 1) ELIMINA del preset cualquier ajuste de los 13 básicos (+ WhiteBalance).
+        xmp = _strip_crs_attrs(preset_xmp, STRIP_CRS_NAMES)
+        # 2) INYECTA los 13 valores calculados por la IA (temp/tint solo si hay corrección).
+        for key, attr in AI_BASIC_ATTR_MAP.items():
+            v = ai.get(key)
+            if v is None:
+                continue
+            xmp = _set_crs_attr(xmp, attr, _fmt_basic(key, v))
+        xmp = _set_wb(xmp, "Custom" if ai.get("temperature") is not None else "As Shot")
         return _set_xmp_meta(xmp)  # 5★ + etiqueta verde para la selección final
-    # Sin preset: básicos por foto + capa creativa (sliders/estilo).
-    params = {}
-    params.update(basic or {})
-    params.update(creative_params or {})
-    return build_xmp(filename, params, camera_profile or "Adobe Standard", precision or "balanced")
+    # Sin preset: XMP nuevo con SOLO los 13 básicos de la IA.
+    return build_xmp(filename, dict(ai), camera_profile or "Adobe Standard", precision or "balanced")
 
 
 def xmp_entries(req_or_job, camera_profile, precision):
@@ -471,7 +515,7 @@ def xmp_entries(req_or_job, camera_profile, precision):
         for p in photos:
             fn = p["filename"]
             base = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].rsplit(".", 1)[0] or "foto"  # sin traversal
-            entries.append((f"{base}.xmp", build_photo_xmp(fn, p.get("basic") or {}, creative, preset_xmp, camera_profile, precision)))
+            entries.append((f"{base}.xmp", build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative, preset_xmp, camera_profile, precision)))
     else:
         # compatibilidad: mismos parámetros para todas
         params = req_or_job.get("parameters") or {}

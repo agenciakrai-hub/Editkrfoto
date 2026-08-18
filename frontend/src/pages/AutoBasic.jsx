@@ -6,8 +6,8 @@ import AppShell from "@/components/AppShell";
 import { Wand2, FolderUp, Loader2, Download, RotateCcw } from "lucide-react";
 import { isRaw } from "@/lib/rawSelection";
 import { analyzeFile, mapLimit } from "@/lib/imageAnalysis";
-import { computeBasic, PRECISION_PROFILES } from "@/lib/rawaistudio/exposureEngine";
-import { AUTO_BASIC_PARAMS } from "@/lib/paramDefs";
+import { PRECISION_PROFILES } from "@/lib/rawaistudio/exposureEngine";
+import { computeAiBasics, NEUTRAL_AI_BASICS } from "@/lib/rawaistudio/basicEngine";
 import { buildStyleXmp } from "@/lib/xmp/buildXmp";
 import { embedXmpInDng } from "@/lib/dngXmp";
 
@@ -34,7 +34,7 @@ export default function AutoBasic() {
     setProgress({ done: 0, total: raws.length });
     const results = await mapLimit(raws, 4, async (file) => {
       const m = await analyzeFile(file);
-      return { name: file.name, file, photometrics: m?.photometrics || null };
+      return { name: file.name, file, photometrics: m?.photometrics || null, color: m?.color || null };
     }, (done) => setProgress((p) => ({ ...p, done })));
     setItems(results);
     setPhase("ready");
@@ -48,7 +48,9 @@ export default function AutoBasic() {
       const zip = new JSZip();
       let embedded = 0, sidecars = 0;
       for (const it of items) {
-        const basic = it.photometrics ? computeBasic(it.photometrics, mode) : AUTO_BASIC_PARAMS;
+        const basic = it.photometrics
+          ? computeAiBasics({ photometrics: it.photometrics, color: it.color }, { mode, deadzone: "prudent", wbStrength: 0.5 }).aiBasicAdjustments
+          : NEUTRAL_AI_BASICS;
         const xmp = buildStyleXmp(it.name, basic, profile || "Adobe Standard");
         if (isDng(it.name) && it.file) {
           // DNG: Lightroom ignora el sidecar → escribimos el XMP DENTRO del .dng
