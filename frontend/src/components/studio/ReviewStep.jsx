@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, Star, Plus, X, Sparkles, Hand } from "lucide-react";
+import { ArrowRight, Star, Plus, X, Sparkles, Hand, AlertTriangle } from "lucide-react";
 import Thumbnail from "@/components/studio/Thumbnail";
 import PhotoViewer from "@/components/studio/PhotoViewer";
+import { WARNING_LABELS } from "@/lib/burstDecision";
 
 function Stars() {
   return (
@@ -18,7 +19,8 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
 
   const selected = useMemo(() => photos.filter((p) => p.selectedForEdit), [photos]);
   const unselected = useMemo(() => photos.filter((p) => !p.selectedForEdit), [photos]);
-  const list = tab === "selected" ? selected : unselected;
+  const warnings = useMemo(() => photos.filter((p) => p.selectedForEdit && p.warning), [photos]);
+  const list = tab === "selected" ? selected : (tab === "warnings" ? warnings : unselected);
 
   const applyToggle = (id) => {
     const next = photos.map((p) => (p.id === id ? { ...p, selectedForEdit: !p.selectedForEdit, source: "manual" } : p));
@@ -45,14 +47,28 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
               <Stars /> <span className="h-2.5 w-2.5 rounded-full bg-emerald-700" title="Verde" />
             </span>
           )}
+          {p.selectedForEdit && p.warning && (
+            <span className="absolute left-2 bottom-2 inline-flex items-center gap-1 rounded-md bg-amber-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950" data-testid={`warning-${p.name}`}>
+              <AlertTriangle className="h-3 w-3" /> Revisar
+            </span>
+          )}
         </div>
       </button>
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <div className="min-w-0">
           <p className="truncate font-mono text-[11px] text-zinc-400">{p.name}</p>
-          <p className={`text-[11px] font-medium ${p.selectedForEdit ? "text-emerald-400" : "text-zinc-500"}`}>
-            {p.selectedForEdit ? "Seleccionada · 5★ + verde" : "No seleccionada"}
+          <p className={`text-[11px] font-medium ${p.selectedForEdit ? (p.warning ? "text-amber-400" : "text-emerald-400") : "text-zinc-500"}`}>
+            {p.selectedForEdit ? (p.warning ? "Seleccionada · revisar" : "Seleccionada · 5★ + verde") : "No seleccionada"}
           </p>
+          {p.selectedForEdit && p.warning && p.warningTypes?.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1" data-testid={`warning-types-${p.name}`}>
+              {p.warningTypes.map((t) => (
+                <span key={t} className="rounded bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-300">
+                  {WARNING_LABELS[t] || t}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {p.selectedForEdit ? (
           <button data-testid={`remove-${p.name}`} onClick={() => applyToggle(p.id)} title="Quitar de la selección"
@@ -86,6 +102,10 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
           className={`rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === "unselected" ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
           No seleccionadas ({unselected.length})
         </button>
+        <button data-testid="tab-warnings" onClick={() => setTab("warnings")}
+          className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === "warnings" ? "border-amber-400/50 bg-amber-400/10 text-amber-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
+          <AlertTriangle className="h-3.5 w-3.5" /> Con advertencia ({warnings.length})
+        </button>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -93,7 +113,9 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
       </div>
       {list.length === 0 && (
         <p className="mt-6 text-sm text-zinc-500" data-testid="review-empty">
-          {tab === "selected" ? "No hay fotos en la selección. Añade alguna desde 'No seleccionadas'." : "No hay fotos descartadas."}
+          {tab === "selected" ? "No hay fotos en la selección. Añade alguna desde 'No seleccionadas'."
+            : tab === "warnings" ? "Ninguna selección tiene advertencias. ¡Todo limpio!"
+            : "No hay fotos descartadas."}
         </p>
       )}
 

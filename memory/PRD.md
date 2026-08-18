@@ -178,6 +178,17 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Verificado: unit tests dngXmp 3/3 (tag 700 apunta al nuevo XMP con crs+rating+label; falla limpio si no es TIFF) + testing_agent frontend 6/6 rutas sin errores. Validación final en Lightroom: la hace el usuario.
 - PENDIENTE: conectar el embebido DNG también en el flujo de Studio (ReportStep, con presets) — hoy Studio genera ZIP en backend (sidecars); DNG en Studio requiere procesar el archivo en cliente. Compatible con el plugin vía `final-selection`.
 
+### Iteración 25 (2026-08-18): FASE 1 — Decisor ÚNICO de selección por secuencia (regla del usuario)
+- **Filosofía nueva (obligatoria)**: el motor es un asistente. De CADA secuencia selecciona SIEMPRE la mejor foto disponible y AVISA (warning) si tiene problemas. NUNCA deja una secuencia sin selección. Estados: SELECTED · SELECTED+WARNING · NOT_SELECTED.
+- **`burstDecision.js` reescrito** como decisor único `decideSequence(photos)` con flujo por etapas: técnica → sujetos/posiciones (identidad relativa sin biometría) → ojos (jerárquico, nunca inventa certeza: open/partial/closed/**unknown**) → comparación relativa → decisión.
+  - **Identidad relativa por secuencia** (`assignSubjects`): fotograma con más caras = layout de referencia; empareja sujetos por posición+tamaño (subject_1 izq / subject_2 centro / subject_3 der…). Evalúa CADA sujeto (ojos, parpadeo, nitidez facial, expresión, visibilidad, posición). Seguimiento incierto → `WARNING_SUBJECT_TRACKING_UNCERTAIN`, baja confianza, pero igual selecciona.
+  - **GARANTÍA ≥1 por secuencia**: cascada de pool no vacío (limpias → técnicamente válidas → todas) + `selected=true` marcado en la mejor ANTES de cualquier warning. Warnings solo AÑADEN avisos, nunca quitan selección. Test de invariante: 100 secuencias aleatorias (incl. degeneradas) = 100 con ≥1 seleccionada.
+  - **Taxonomía de warnings** (`WARNING` + `WARNING_LABELS`): CLOSED_EYES, PARTIAL_BLINK, LOW_SHARPNESS, EXPOSURE, FACE_OCCLUDED, MISSING_SUBJECT, MULTIPLE_FACE_ISSUES, NO_PERFECT_CANDIDATE, SUBJECT_TRACKING_UNCERTAIN, TIE. Empate real → máx 2 SELECTED+WARNING.
+  - **Auditoría por foto**: technicalScore, faceScore, eyesScore, expressionScore, sharpnessScore, exposureScore, selectionConfidence, subjects[], state, reason.
+- **`faceEngine.js`**: `applyFaceLayer` ya NO decide (eliminado `rankOf`); solo detecta y delega en el decisor único. `inputSize` del detector 320 → **512** (ojos precisos). Nueva **nitidez facial por cara** (`measureFaceSharpness`, varianza laplaciano sobre el recorte).
+- **UI**: SelectionStep relabel "con advertencia (revisar)"; ReviewStep con pestaña **"Con advertencia"**, badge ⚠ Revisar en tarjetas seleccionadas y chips con los tipos de warning.
+- Verificado: jest 34/34 (burstDecision 12 casos + faceLogic + selectionLogic). Compila. **PENDIENTE**: validación del usuario con carpeta de RAW reales (grupos con ojos abiertos/cerrados, parpadeos, sub/sobreexpuestas) antes de pasar a FASE 2.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

@@ -115,7 +115,7 @@ export default function SelectionStep({ files, onContinue }) {
           )}
           {fs.doubts > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300" data-testid="face-doubts">
-              <AlertTriangle className="h-3.5 w-3.5" /> {fs.doubts} con dudas para decidir
+              <AlertTriangle className="h-3.5 w-3.5" /> {fs.doubts} con advertencia (revisar)
             </span>
           )}
         </div>

@@ -6,6 +6,7 @@ import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
 import { clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
+import { decideSequence } from "@/lib/burstDecision";
 
 let modelsPromise = null;
 export function loadFaceModels() {
@@ -31,7 +32,9 @@ export function loadFaceModels() {
   return modelsPromise;
 }
 
-const DET_OPTS = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.3 });
+// Resolución de detección ALTA: los ojos/parpadeo necesitan landmarks precisos.
+// 320 hacía que caras pequeñas quedaran borrosas → falsos "ojos cerrados".
+const DET_OPTS = new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 });
 
 function imgFromUrl(url) {
   return new Promise((resolve, reject) => {
@@ -42,8 +45,34 @@ function imgFromUrl(url) {
   });
 }
 
+// Nitidez facial real: varianza del laplaciano sobre el recorte de la cara (0..1).
+function measureFaceSharpness(img, box) {
+  try {
+    const S = 48;
+    const c = document.createElement("canvas");
+    c.width = S; c.height = S;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, Math.max(0, box.x), Math.max(0, box.y), Math.max(1, box.width), Math.max(1, box.height), 0, 0, S, S);
+    const d = ctx.getImageData(0, 0, S, S).data;
+    const g = new Float32Array(S * S);
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) g[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    let mean = 0, n = 0;
+    const lap = new Float32Array((S - 2) * (S - 2));
+    for (let y = 1; y < S - 1; y++) for (let x = 1; x < S - 1; x++) {
+      const idx = y * S + x;
+      const l = 4 * g[idx] - g[idx - 1] - g[idx + 1] - g[idx - S] - g[idx + S];
+      lap[n] = l; mean += l; n++;
+    }
+    mean /= (n || 1);
+    let varr = 0;
+    for (let k = 0; k < n; k++) { const v = lap[k] - mean; varr += v * v; }
+    const raw = n ? varr / n : 0;
+    return raw / (raw + 150); // normaliza monótono a 0..1
+  } catch { return 0.5; }
+}
+
 // Detecta caras con landmarks + expresiones + descriptor. Devuelve por cara:
-// { cx, cy, w, h, score, descriptor, ear (ojos abiertos), smile (0..1), area }.
+// { cx, cy, w, h, score, descriptor, ear, smile, area, faceSharpness }.
 export async function detectFacesFromUrl(url) {
   const img = await imgFromUrl(url);
   const W = img.naturalWidth || img.width || 1;
@@ -59,6 +88,7 @@ export async function detectFacesFromUrl(url) {
       cx: (box.x + box.width / 2) / W, cy: (box.y + box.height / 2) / H,
       w: box.width / W, h: box.height / H, score: r.detection.score,
       descriptor: Array.from(r.descriptor), ear, smile, area: (box.width / W) * (box.height / H),
+      faceSharpness: measureFaceSharpness(img, box),
     };
   });
 }
@@ -116,30 +146,44 @@ export async function applyFaceLayer(photos, onProgress) {
     onProgress && onProgress(done, targets.length);
   });
 
-  // Re-selección CRÍTICA por ráfaga: dentro de una ráfaga las tomas son casi idénticas,
-  // así que se elige UNA sola (la mejor: nitidez/exposición + ojos abiertos + sonrisa).
-  // Solo se conserva una 2ª (máx 2 extra) si hay EMPATE real (≥97% de la mejor) → "Dudas".
+  // DECISOR ÚNICO por secuencia (burstDecision): comparación ESTRICTA por etapas
+  // (técnica → sujetos/posiciones → ojos → comparación → decisión). Garantiza ≥1
+  // seleccionada por secuencia y añade warnings + auditoría por foto. applyFaceLayer
+  // ya NO impone selección propia: solo detecta caras y delega en el decisor.
   const groups = {};
   photos.forEach((p) => { (groups[p.burstId] = groups[p.burstId] || []).push(p); });
+  const buildInput = (p) => ({
+    id: p.id, name: p.name,
+    technicalScore: (p.score ?? 50) / 100,
+    photometrics: p.photometrics || null,
+    faces: (p.faces || []).map((f) => ({
+      cx: f.cx, cy: f.cy, area: f.area, ear: f.ear, smile: f.smile,
+      w: f.w, h: f.h, detScore: f.score, faceSharpness: f.faceSharpness,
+    })),
+  });
   let doubts = 0;
-  const rankOf = (p) => {
-    const base = (p.score || 50) / 100;
-    return p.faceScore == null ? base : 0.55 * base + 0.45 * p.faceScore;
-  };
   for (const g of Object.values(groups)) {
-    if (g.length < 2) continue;
-    g.forEach((p) => { p.rank = rankOf(p); p.selectedForEdit = false; p.doubt = false; p.faceDistinct = false; });
-    const sorted = [...g].sort((a, b) => b.rank - a.rank);
-    const best = sorted[0];
-    best.selectedForEdit = true;
-    let extras = 0;
-    for (let i = 1; i < sorted.length && extras < 2; i++) {
-      const p = sorted[i];
-      if (p.rank >= best.rank * 0.97) {
-        p.selectedForEdit = true; p.doubt = true; best.doubt = true; doubts++; extras++;
-      } else break; // el resto puntúa claramente peor → descartadas
+    const byId = Object.fromEntries(g.map((p) => [p.id, p]));
+    const res = decideSequence(g.map(buildInput), g[0].burstId);
+    for (const rp of res.photos) {
+      const p = byId[rp.id];
+      if (!p) continue;
+      p.selectedForEdit = rp.selected;
+      p.warning = rp.warning;
+      p.doubt = rp.warning;               // compat: "duda" = necesita revisión humana
+      p.warningTypes = rp.warningTypes;
+      p.state = rp.state;                 // SELECTED | SELECTED_WARNING | NOT_SELECTED
+      p.reason = rp.reason;
+      p.subjects = rp.subjects;
+      p.selectionConfidence = rp.selectionConfidence;
+      p.score = rp.score;
+      p.audit = {
+        technicalScore: rp.technicalScore, faceScore: rp.faceScore, eyesScore: rp.eyesScore,
+        expressionScore: rp.expressionScore, sharpnessScore: rp.sharpnessScore,
+        exposureScore: rp.exposureScore, selectionConfidence: rp.selectionConfidence,
+      };
+      if (rp.warning) doubts++;
     }
-    g.forEach((p) => { p.score = Math.round(p.rank * 100); });
   }
   const rescued = 0;
 
