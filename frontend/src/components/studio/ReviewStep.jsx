@@ -50,8 +50,8 @@ export default function ReviewStep({ initialPhotos, people = [], onContinue }) {
           <p className="mt-1 text-sm text-zinc-500">
             Toca cualquier foto para incluirla o excluirla de la cola de edición IA. Las verdes van a edición.
             <span className="mt-1 block text-xs text-zinc-600">
-              <span className="text-amber-400">⚠ Dudas</span> = la IA no tiene una ganadora clara (decides tú) ·
-              <span className="text-emerald-400"> Cara distinta</span> = misma ráfaga pero las caras cambiaron (foto diferente).
+              La IA elige <span className="text-emerald-400">solo la mejor</span> de cada ráfaga (nitidez, ojos abiertos y sonrisa).
+              <span className="text-amber-400"> ⚠ Dudas</span> = empate real, se dejan un par para que decidas tú.
             </span>
           </p>
         </div>

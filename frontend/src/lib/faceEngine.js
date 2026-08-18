@@ -5,7 +5,7 @@
 import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
-import { facesChanged, clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
+import { clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
 
 let modelsPromise = null;
 export function loadFaceModels() {
@@ -116,33 +116,32 @@ export async function applyFaceLayer(photos, onProgress) {
     onProgress && onProgress(done, targets.length);
   });
 
-  // Re-selección PRECISA por ráfaga: elige la MEJOR toma (nitidez/exposición + ojos + sonrisa).
-  // "Dudas" solo en empate real muy ajustado. Caras distintas = foto diferente (se conserva).
+  // Re-selección CRÍTICA por ráfaga: dentro de una ráfaga las tomas son casi idénticas,
+  // así que se elige UNA sola (la mejor: nitidez/exposición + ojos abiertos + sonrisa).
+  // Solo se conserva una 2ª (máx 2 extra) si hay EMPATE real (≥97% de la mejor) → "Dudas".
   const groups = {};
   photos.forEach((p) => { (groups[p.burstId] = groups[p.burstId] || []).push(p); });
-  let rescued = 0, doubts = 0;
+  let doubts = 0;
   const rankOf = (p) => {
     const base = (p.score || 50) / 100;
     return p.faceScore == null ? base : 0.55 * base + 0.45 * p.faceScore;
   };
   for (const g of Object.values(groups)) {
     if (g.length < 2) continue;
-    g.forEach((p) => { p.rank = rankOf(p); });
-    const best = g.reduce((a, b) => (b.rank > a.rank ? b : a));
-    g.forEach((p) => { p.selectedForEdit = false; p.doubt = false; p.faceDistinct = false; });
+    g.forEach((p) => { p.rank = rankOf(p); p.selectedForEdit = false; p.doubt = false; p.faceDistinct = false; });
+    const sorted = [...g].sort((a, b) => b.rank - a.rank);
+    const best = sorted[0];
     best.selectedForEdit = true;
-    for (const p of g) {
-      if (p === best) continue;
-      if (p.facesAnalyzed && best.facesAnalyzed && facesChanged(best.faces, p.faces)) {
-        // Configuración de caras distinta (ojos/posición) → momento diferente: se conserva.
-        p.selectedForEdit = true; p.faceDistinct = true; rescued++;
-      } else if (p.rank >= best.rank * 0.985) {
-        // Empate real: no hay una claramente mejor → se marcan ambas para que decida el fotógrafo.
-        p.selectedForEdit = true; p.doubt = true; best.doubt = true; doubts++;
-      }
+    let extras = 0;
+    for (let i = 1; i < sorted.length && extras < 2; i++) {
+      const p = sorted[i];
+      if (p.rank >= best.rank * 0.97) {
+        p.selectedForEdit = true; p.doubt = true; best.doubt = true; doubts++; extras++;
+      } else break; // el resto puntúa claramente peor → descartadas
     }
     g.forEach((p) => { p.score = Math.round(p.rank * 100); });
   }
+  const rescued = 0;
 
   // Reconocimiento → agrupa personas (protagonistas) por descriptor facial.
   const entries = [];
