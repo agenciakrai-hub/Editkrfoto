@@ -35,7 +35,7 @@ function configFromCreative(params) {
   return cfg;
 }
 
-export default function PresetParamsStep({ count, onContinue }) {
+export default function PresetParamsStep({ count, onContinue, embedded = false, onChange }) {
   const [config, setConfig] = useState(defaultParameterConfig());
   const [precision, setPrecision] = useState("balanced");
   const [presetName, setPresetName] = useState(null);
@@ -47,6 +47,9 @@ export default function PresetParamsStep({ count, onContinue }) {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial de perfiles (solo al montar)
   useEffect(() => { api.get("/style-profiles").then((r) => setProfiles(r.data)).catch(() => {}); }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- notifica el estilo elegido al contenedor (modo embebido)
+  useEffect(() => { if (embedded && onChange) onChange({ config, precisionMode: precision, presetName, presetXmpText }); }, [config, precision, presetName, presetXmpText, embedded]);
 
   const pickPreset = (preset) => { setConfig(applyPreset(defaultParameterConfig(), preset)); setPresetName(preset.name); setPresetXmpText(null); };
   const setVal = (key, value) => setConfig((c) => ({ ...c, [key]: { ...c[key], value: Number(value) } }));
@@ -228,13 +231,13 @@ export default function PresetParamsStep({ count, onContinue }) {
           })}
         </div>
 
-        {!presetName && <p className="mt-6 text-xs text-amber-400/90">Selecciona un perfil de estilo, sube un .xmp o carga un perfil guardado para continuar.</p>}
+        {!presetName && <p className="mt-6 text-xs text-zinc-500">Opcional: sube un .xmp, elige un estilo o un perfil guardado. Sin preset, se aplican solo el perfil de cámara + las básicas de la IA.</p>}
 
         <div className="mt-6"><BeforeAfterPreview params={fullParametersFromConfig(config)} /></div>
 
         <button data-testid="presets-continue-btn" disabled={!presetName}
           onClick={() => onContinue({ config, precisionMode: precision, presetName, presetXmpText })}
-          className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100">
+          className={`mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100 ${embedded ? "hidden" : ""}`}>
           Continuar <ArrowRight className="h-4 w-4" />
         </button>
       </section>

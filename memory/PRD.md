@@ -211,6 +211,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Health check de despliegue: PASS (compilación, env-only URLs, supervisor, auth redirect, sin ops destructivas de DB).
 - Añadido el host de producción de Emergent a `CORS_ORIGINS` (`edit.krfoto.com` + `ai-xmp-gen.emergent.host` + preview). Se mantiene **lista explícita, NO `"*"`**: la auth usa cookies con credenciales y `allow_credentials = not wildcard`, por lo que `"*"` rompería el login. Verificado en runtime: backend responde `allow-origin: ai-xmp-gen.emergent.host` + `allow-credentials: true`.
 
+### Iteración 29 (2026-08-19): Perfiles de Lightroom + fusión de pasos Perfil+Estilo
+- **CameraProfileStep** rehecho: juego real de perfiles Adobe (Adobe Color [def], Estándar, Retrato, Paisaje, Vivos, Neutro, Adaptable Color, Monocromo, Adaptable B&N) con el nombre interno correcto para `crs:CameraProfile`. Sección **"Mis perfiles"**: añadir por nombre exacto (persistencia en localStorage `krfoto.customProfiles`, eliminables). Aviso: el sidecar solo referencia el perfil; debe existir en el Lightroom del usuario.
+- **Fusión de wizard**: los pasos "Perfil" (3) y "Presets IA" (4) se combinan en **un único paso "Perfil y estilo"** (`ProfilePresetStep`). Stepper pasa de 6 a 5 nodos. Flujo explicado en la UI: 1) perfil elegido → 2) IA aplica las 13 básicas por foto → 3) preset/estilo de color encima (opcional).
+- `CameraProfileStep` y `PresetParamsStep` ahora soportan modo `embedded` (ocultan su Continuar y notifican vía `onChange`); el preset es **opcional** (sin preset = perfil + básicas IA). `STEP_INDEX` actualizado.
+- Default de perfil: "Adobe Color". Compila limpio; verificación por compilación (el paso vive dentro del wizard, no accesible en headless).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

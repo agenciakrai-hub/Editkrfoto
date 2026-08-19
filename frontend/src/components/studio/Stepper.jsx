@@ -1,11 +1,10 @@
-import { Check, Folder, Sparkles, Eye, Camera, SlidersHorizontal, FileArchive } from "lucide-react";
+import { Check, Folder, Sparkles, Eye, SlidersHorizontal, FileArchive } from "lucide-react";
 
 export const STUDIO_STEPS = [
   { label: "Carpeta RAW", icon: Folder },
   { label: "Selección IA", icon: Sparkles },
   { label: "Revisión", icon: Eye },
-  { label: "Perfil", icon: Camera },
-  { label: "Presets IA", icon: SlidersHorizontal },
+  { label: "Perfil y estilo", icon: SlidersHorizontal },
   { label: "XMP", icon: FileArchive },
 ];
 

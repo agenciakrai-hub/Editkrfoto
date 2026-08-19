@@ -6,8 +6,7 @@ import Stepper from "@/components/studio/Stepper";
 import FolderSelectStep from "@/components/studio/FolderSelectStep";
 import SelectionStep from "@/components/studio/SelectionStep";
 import ReviewStep from "@/components/studio/ReviewStep";
-import CameraProfileStep from "@/components/studio/CameraProfileStep";
-import PresetParamsStep from "@/components/studio/PresetParamsStep";
+import ProfilePresetStep from "@/components/studio/ProfilePresetStep";
 import ProcessingModeChoice from "@/components/studio/ProcessingModeChoice";
 import ProcessingStep from "@/components/studio/ProcessingStep";
 import ReportStep from "@/components/studio/ReportStep";
@@ -15,7 +14,7 @@ import { computeAiBasics } from "@/lib/rawaistudio/basicEngine";
 import { analyzeFolder } from "@/lib/rawSelection";
 import api from "@/lib/api";
 
-const STEP_INDEX = { folder: 0, selection: 1, review: 2, profile: 3, presets: 4, mode: 5, processing: 5, report: 5 };
+const STEP_INDEX = { folder: 0, selection: 1, review: 2, style: 3, mode: 4, processing: 4, report: 4 };
 
 export default function Studio() {
   const [params] = useSearchParams();
@@ -28,7 +27,7 @@ export default function Studio() {
   const [photos, setPhotos] = useState([]);
   const [people, setPeople] = useState([]);
   const [sendPhotos, setSendPhotos] = useState([]);
-  const [profileChoice, setProfileChoice] = useState({ profile: "Adobe Standard" });
+  const [profileChoice, setProfileChoice] = useState({ profile: "Adobe Color" });
   const [presetInfo, setPresetInfo] = useState(null);
   const [result, setResult] = useState(null);
 
@@ -100,7 +99,7 @@ export default function Studio() {
 
       <div className="mt-6"><Stepper current={STEP_INDEX[step]} /></div>
 
-      <div className={`mt-8 ${step === "review" ? "" : "max-w-3xl"}`}>
+      <div className={`mt-8 ${step === "review" || step === "style" ? "" : "max-w-3xl"}`}>
         {step === "folder" && (
           <FolderSelectStep onContinue={async (f, folderName) => {
             setFiles(f);
@@ -150,24 +149,21 @@ export default function Studio() {
               const queue = all.filter((x) => x.selectedForEdit);
               setSendPhotos(queue);
               await persistFinal(all);
-              setStep("profile");
+              setStep("style");
             }} />
         )}
 
-        {step === "profile" && (
-          <CameraProfileStep count={sendPhotos.length} value={profileChoice} onContinue={async (choice) => {
-            setProfileChoice(choice);
-            await persist({ profileChoice: choice, profileCompleted: true });
-            setStep("presets");
-          }} />
-        )}
-
-        {step === "presets" && (
-          <PresetParamsStep count={sendPhotos.length} onContinue={async (info) => {
-            setPresetInfo(info);
-            await persist({ presetName: info.presetName, precisionMode: info.precisionMode, presetCompleted: true });
-            setStep("mode");
-          }} />
+        {step === "style" && (
+          <ProfilePresetStep count={sendPhotos.length} profileValue={profileChoice} presetValue={presetInfo}
+            onContinue={async ({ profileChoice: choice, presetInfo: info }) => {
+              setProfileChoice(choice);
+              setPresetInfo(info);
+              await persist({
+                profileChoice: choice, profileCompleted: true,
+                presetName: info.presetName, precisionMode: info.precisionMode, presetCompleted: true,
+              });
+              setStep("mode");
+            }} />
         )}
 
         {step === "mode" && (
