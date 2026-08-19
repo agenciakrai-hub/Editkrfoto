@@ -223,6 +223,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Se mantiene: 1 seleccionada por secuencia salvo empate real (máx 2), garantía ≥1 por secuencia, inputSize 512.
 - Verificado: jest **71/71** (nuevos: descarte por cara borrosa, split por posición/ángulo/presencia). La herramienta Validación refleja todo (mismo pipeline). Validación con RAW reales → usuario.
 
+### Iteración 31 (2026-08-19): Simplificación del paso "Perfil y estilo"
+- `PresetParamsStep` reescrito y simplificado a 3 módulos independientes: (1) perfil de cámara [arriba], (2) básicas automáticas por IA — panel de los 13 en "Auto" (solo aceptación) + intensidad de corrección (Conservador/Equilibrado/Agresivo), (3) preset/estilo de color: subir .xmp, **guardar** (localStorage `krfoto.presets`), seleccionar/eliminar, u opción "Sin preset".
+- Eliminado del paso: KR Auto Nivelado embebido, galería PhotographerStyles, estilos fijos STYLE_PRESETS (no producían XMP), sliders creativos y Antes/Después. El preset NUNCA toca los 13 (aislamiento en backend intacto).
+- El XMP final ya registra todo de forma independiente: 13 básicas IA + look del preset + 5★ y etiqueta verde de la selección (`_set_xmp_meta`).
+- Compila limpio; jest 71/71 sin cambios (componente presentacional + localStorage).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
