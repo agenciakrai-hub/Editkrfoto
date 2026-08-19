@@ -233,6 +233,11 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Bug: al reanudar una selección guardada (`analyzeFolder`, sin análisis de píxeles) las fotos no tenían `photometrics`/`color`, así que `computeAiBasics` devolvía neutro → los 13 básicos salían en 0 en el XMP (el preset sí se aplicaba). 
 - Fix: `ensureMetrics(queue)` en el continue de Revisión re-analiza (`analyzeFile`) las fotos seleccionadas que no tengan fotometría/color antes de construir el payload → básicos IA reales por foto. Cubre flujo nuevo y reanudado.
 
+### Iteración 33 (2026-08-19): Fix — DNG no recibía las básicas IA (solo el preset)
+- Causa: el Studio generaba solo sidecars `.xmp`; Lightroom IGNORA el sidecar en DNG y lee la metadata embebida del propio archivo (que ya traía el preset), por eso el DNG mostraba preset pero no las básicas nuevas.
+- Fix: `ReportStep.download` ahora, tras recibir el ZIP de sidecars del backend (XMP correcto con básicas+preset+5★/verde y aislamiento), **incrusta ese XMP DENTRO de cada .dng** (`embedXmpInDng`, re-apunta el TAG 700 de IFD0). CR3/otros siguen como sidecar. Se pasan los `File` a ReportStep vía `files={sendPhotos}`.
+- ZIP resultante: `.dng` con ajustes incrustados + `.xmp` para el resto. jest 71/71, compila.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

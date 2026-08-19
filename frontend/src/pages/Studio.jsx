@@ -205,7 +205,7 @@ export default function Studio() {
         )}
 
         {step === "report" && result && (
-          <ReportStep report={result} projectId={projectId} payload={xmpPayload}
+          <ReportStep report={result} projectId={projectId} payload={xmpPayload} files={sendPhotos}
             onRestart={() => navigate("/dashboard")} />
         )}
       </div>

@@ -1,20 +1,49 @@
 import { useState } from "react";
 import { saveAs } from "file-saver";
+import JSZip from "jszip";
 import { toast } from "sonner";
 import { CheckCircle2, Download, RotateCcw, FileArchive, Images } from "lucide-react";
 import api from "@/lib/api";
+import { embedXmpInDng } from "@/lib/dngXmp";
 
-export default function ReportStep({ report, projectId, payload, onRestart }) {
+const baseName = (n) => n.replace(/\.[^.]+$/, "");
+const isDng = (n) => /\.dng$/i.test(n);
+
+export default function ReportStep({ report, projectId, payload, files = [], onRestart }) {
   const [downloading, setDownloading] = useState(false);
 
   const download = async () => {
     setDownloading(true);
     try {
       const res = await api.post(`/projects/${projectId}/generate-xmp`, payload, { responseType: "blob" });
-      const disposition = res.headers["content-disposition"] || "";
-      const match = disposition.match(/filename="?([^"]+)"?/);
-      saveAs(res.data, match ? match[1] : "RAWAI_XMP.zip");
-      toast.success("Paquete XMP descargado", { description: `${report.succeeded} archivos .xmp generados` });
+      // El backend devuelve sidecars .xmp (básicas IA + preset + 5★/verde, con aislamiento).
+      // Para DNG, Lightroom IGNORA el sidecar → hay que incrustar el XMP DENTRO del .dng.
+      const fileMap = {};
+      for (const f of files) if (f && f.file) fileMap[f.name] = f.file;
+      const inZip = await JSZip.loadAsync(res.data);
+      const xmpByBase = {};
+      await Promise.all(Object.keys(inZip.files).map(async (name) => {
+        if (name.toLowerCase().endsWith(".xmp")) xmpByBase[baseName(name)] = await inZip.files[name].async("string");
+      }));
+
+      const out = new JSZip();
+      let embedded = 0, sidecars = 0;
+      for (const base of Object.keys(xmpByBase)) {
+        const xmp = xmpByBase[base];
+        const dngName = Object.keys(fileMap).find((fn) => isDng(fn) && baseName(fn) === base);
+        if (dngName) {
+          try {
+            const bytes = new Uint8Array(await fileMap[dngName].arrayBuffer());
+            const emb = embedXmpInDng(bytes, xmp);
+            if (emb.ok) { out.file(dngName, emb.bytes); embedded++; continue; }
+          } catch { /* respaldo: sidecar */ }
+        }
+        out.file(`${base}.xmp`, xmp);
+        sidecars++;
+      }
+      const blob = await out.generateAsync({ type: "blob", compression: "DEFLATE" });
+      saveAs(blob, "RAWAI_XMP.zip");
+      toast.success("Paquete descargado", { description: `${embedded} DNG con ajustes incrustados · ${sidecars} sidecar .xmp` });
     } catch {
       toast.error("No se pudo generar el ZIP");
     } finally {
