@@ -11,6 +11,7 @@ import ProcessingModeChoice from "@/components/studio/ProcessingModeChoice";
 import ProcessingStep from "@/components/studio/ProcessingStep";
 import ReportStep from "@/components/studio/ReportStep";
 import { computeAiBasics } from "@/lib/rawaistudio/basicEngine";
+import { analyzeFile, mapLimit } from "@/lib/imageAnalysis";
 import { analyzeFolder } from "@/lib/rawSelection";
 import api from "@/lib/api";
 
@@ -60,6 +61,21 @@ export default function Studio() {
     editQueueFilenames: all.filter((p) => p.selectedForEdit).map((p) => p.name),
     reviewCompleted: true,
   });
+
+  // Garantiza que la cola de edición tenga fotometría/color para que la IA calcule los básicos.
+  // Necesario al REANUDAR una selección guardada (analyzeFolder no analiza píxeles).
+  const ensureMetrics = async (queue) => {
+    const missing = queue.filter((p) => !p.photometrics && p.file);
+    if (!missing.length) return;
+    await mapLimit(missing, 3, async (p) => {
+      try {
+        const m = await analyzeFile(p.file);
+        if (m) { p.photometrics = m.photometrics; p.color = m.color; }
+      } catch (err) {
+        if (process.env.NODE_ENV === "development") console.warn("No se pudo analizar para básicos IA:", p.name, err);
+      }
+    });
+  };
 
   const buildPayload = () => {
     const mode = presetInfo.precisionMode || "balanced";
@@ -147,7 +163,8 @@ export default function Studio() {
             onContinue={async (all) => {
               setPhotos(all);
               const queue = all.filter((x) => x.selectedForEdit);
-              setSendPhotos(queue);
+              await ensureMetrics(queue); // recalcula fotometría/color si falta (p.ej. selección reanudada) → básicos IA reales
+              setSendPhotos([...queue]);
               await persistFinal(all);
               setStep("style");
             }} />

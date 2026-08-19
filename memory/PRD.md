@@ -229,6 +229,10 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - El XMP final ya registra todo de forma independiente: 13 básicas IA + look del preset + 5★ y etiqueta verde de la selección (`_set_xmp_meta`).
 - Compila limpio; jest 71/71 sin cambios (componente presentacional + localStorage).
 
+### Iteración 32 (2026-08-19): Fix — básicos IA vacíos al reanudar selección
+- Bug: al reanudar una selección guardada (`analyzeFolder`, sin análisis de píxeles) las fotos no tenían `photometrics`/`color`, así que `computeAiBasics` devolvía neutro → los 13 básicos salían en 0 en el XMP (el preset sí se aplicaba). 
+- Fix: `ensureMetrics(queue)` en el continue de Revisión re-analiza (`analyzeFile`) las fotos seleccionadas que no tengan fotometría/color antes de construir el payload → básicos IA reales por foto. Cubre flujo nuevo y reanudado.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
