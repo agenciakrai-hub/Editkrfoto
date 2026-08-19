@@ -65,7 +65,7 @@ export function computeAiBasics(analysis, opts = {}) {
   const exposure = Math.abs(base.exposure) < dz.exp ? 0 : Math.round(base.exposure * 100) / 100;
   const contrast = snap(base.contrast, dz.tone);
   const highlights = snap(base.highlights, dz.tone);
-  const shadows = clamp(snap(pm ? base.shadows - 8 : 0, dz.tone), -100, 100); // sin lift automático de sombras
+  const shadows = clamp(snap(pm ? base.shadows : 0, dz.tone), -100, 100); // Shadows sin baseline oculto (fuente única: exposureEngine)
   const whites = snap(base.whites, dz.tone);
   const blacks = snap(base.blacks, dz.tone);
 

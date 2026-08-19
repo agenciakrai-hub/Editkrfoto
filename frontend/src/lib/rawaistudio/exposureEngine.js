@@ -43,7 +43,7 @@ export function computeBasic(pm, mode = "balanced") {
 
   // --- Recuperación de luces / apertura de sombras (según recorte real y escena) ---
   let hi = -pm.highClip * 600 - Math.max(0, hiE - 248) * 3;
-  let sh = pm.lowClip * 600 + Math.max(0, 8 - loE) * 3 + 8;
+  let sh = pm.lowClip * 600 + Math.max(0, 8 - loE) * 3;
   if (pm.scene === "backlit") sh += 22;              // abre al sujeto a contraluz
   if (pm.scene === "high_key") hi -= 15;             // protege altas luces aireadas
   if (pm.scene === "low_key") { sh -= 18; hi += 6; } // mantiene cuerpo en las sombras
