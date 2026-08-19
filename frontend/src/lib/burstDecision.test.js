@@ -1,10 +1,64 @@
-import { decideSequence, eyeState, assignSubjects, WARNING, MAX_SELECTED } from "./burstDecision";
+import { decideSequence, eyeState, assignSubjects, splitByMainFace, WARNING, MAX_SELECTED } from "./burstDecision";
 
 // Helpers -----------------------------------------------------------------
-const face = (cx, ear, { area = 0.1, smile = 0.5, det = 0.9, sharp = 0.7, cy = 0.5 } = {}) => ({
-  cx, cy, area, ear, smile, score: det, detScore: det, faceSharpness: sharp, w: Math.sqrt(area), h: Math.sqrt(area),
+const face = (cx, ear, { area = 0.1, smile = 0.5, det = 0.9, sharp = 0.7, cy = 0.5, w, roll = 0, yaw = 0 } = {}) => ({
+  cx, cy, area, ear, smile, score: det, detScore: det, faceSharpness: sharp,
+  w: w ?? Math.sqrt(area), h: Math.sqrt(area), pose: { roll, yaw },
 });
 const photo = (id, technicalScore, faces = []) => ({ id, name: id, technicalScore, faces });
+
+// --- Descarte por trepidación = nitidez FACIAL del sujeto principal ------
+test("cara del sujeto principal trepidada pierde ante la misma cara nítida (mismos ojos abiertos)", () => {
+  const res = decideSequence([
+    photo("blur", 0.8, [face(0.5, 0.30, { sharp: 0.30 })]), // cara borrosa (trepidación)
+    photo("sharp", 0.8, [face(0.5, 0.30, { sharp: 0.85 })]), // misma persona, nítida
+  ]);
+  expect(res.selectedPhoto).toBe("sharp");
+  expect(res.photos.find((p) => p.id === "blur").selected).toBe(false);
+  expect(res.photos.find((p) => p.id === "sharp").sharpnessScore).toBe(85);
+});
+
+test("la nitidez global NO manda cuando hay caras: gana la de mejor cara aunque baje el score global", () => {
+  const res = decideSequence([
+    photo("a", 0.9, [face(0.5, 0.30, { sharp: 0.20 })]), // global alto pero cara borrosa
+    photo("b", 0.5, [face(0.5, 0.30, { sharp: 0.85 })]), // global bajo pero cara nítida
+  ]);
+  expect(res.selectedPhoto).toBe("b");
+});
+
+// --- Agrupación estricta por cara principal ------------------------------
+test("splitByMainFace mantiene junta una secuencia estable", () => {
+  const g = splitByMainFace([
+    { id: "1", faces: [face(0.5, 0.3)] },
+    { id: "2", faces: [face(0.52, 0.3)] },
+    { id: "3", faces: [face(0.5, 0.3)] },
+  ]);
+  expect(g).toHaveLength(1);
+  expect(g[0]).toHaveLength(3);
+});
+
+test("splitByMainFace corta cuando la cara principal cambia de POSICIÓN", () => {
+  const g = splitByMainFace([
+    { id: "1", faces: [face(0.3, 0.3)] },
+    { id: "2", faces: [face(0.32, 0.3)] },
+    { id: "3", faces: [face(0.75, 0.3)] }, // salto grande de posición
+  ]);
+  expect(g).toHaveLength(2);
+  expect(g[1].map((p) => p.id)).toEqual(["3"]);
+});
+
+test("splitByMainFace corta cuando cambia el ÁNGULO (yaw) o la presencia", () => {
+  const gYaw = splitByMainFace([
+    { id: "1", faces: [face(0.5, 0.3, { yaw: 0 })] },
+    { id: "2", faces: [face(0.5, 0.3, { yaw: 0.4 })] }, // giro fuerte
+  ]);
+  expect(gYaw).toHaveLength(2);
+  const gPres = splitByMainFace([
+    { id: "1", faces: [face(0.5, 0.3)] },
+    { id: "2", faces: [] }, // desaparece la persona principal
+  ]);
+  expect(gPres).toHaveLength(2);
+});
 
 // --- eyeState (nunca inventa certeza) ------------------------------------
 test("eyeState clasifica open/partial/closed y unknown por baja confianza", () => {

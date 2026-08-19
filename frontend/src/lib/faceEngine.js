@@ -6,7 +6,7 @@ import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
 import { clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
-import { decideSequence } from "@/lib/burstDecision";
+import { decideSequence, splitByMainFace } from "@/lib/burstDecision";
 
 let modelsPromise = null;
 export function loadFaceModels() {
@@ -72,8 +72,25 @@ function measureFaceSharpness(img, box) {
   } catch { return 0.5; }
 }
 
+// Ángulo/pose de la cara desde landmarks: roll (inclinación, grados) y yaw (giro, ratio).
+function computePose(pts) {
+  const mean = (idx) => {
+    let x = 0, y = 0;
+    for (const i of idx) { x += pts[i].x; y += pts[i].y; }
+    return { x: x / idx.length, y: y / idx.length };
+  };
+  const le = mean([36, 37, 38, 39, 40, 41]);
+  const re = mean([42, 43, 44, 45, 46, 47]);
+  const roll = Math.atan2(re.y - le.y, re.x - le.x) * 180 / Math.PI;
+  const eyesMid = { x: (le.x + re.x) / 2, y: (le.y + re.y) / 2 };
+  const interEye = Math.hypot(re.x - le.x, re.y - le.y) || 1;
+  const nose = pts[30] || eyesMid;
+  const yaw = (nose.x - eyesMid.x) / interEye; // >0 girada a un lado
+  return { roll, yaw };
+}
+
 // Detecta caras con landmarks + expresiones + descriptor. Devuelve por cara:
-// { cx, cy, w, h, score, descriptor, ear, smile, area, faceSharpness }.
+// { cx, cy, w, h, score, descriptor, ear, smile, area, faceSharpness, pose }.
 export async function detectFacesFromUrl(url) {
   const img = await imgFromUrl(url);
   const W = img.naturalWidth || img.width || 1;
@@ -89,7 +106,7 @@ export async function detectFacesFromUrl(url) {
       cx: (box.x + box.width / 2) / W, cy: (box.y + box.height / 2) / H,
       w: box.width / W, h: box.height / H, score: r.detection.score,
       descriptor: Array.from(r.descriptor), ear, smile, area: (box.width / W) * (box.height / H),
-      faceSharpness: measureFaceSharpness(img, box),
+      faceSharpness: measureFaceSharpness(img, box), pose: computePose(pts),
     };
   });
 }
@@ -163,27 +180,36 @@ export async function applyFaceLayer(photos, onProgress) {
     })),
   });
   let doubts = 0;
+  let nextBurstId = 1;
   for (const g of Object.values(groups)) {
-    const byId = Object.fromEntries(g.map((p) => [p.id, p]));
-    const res = decideSequence(g.map(buildInput), g[0].burstId);
-    for (const rp of res.photos) {
-      const p = byId[rp.id];
-      if (!p) continue;
-      p.selectedForEdit = rp.selected;
-      p.warning = rp.warning;
-      p.doubt = rp.warning;               // compat: "duda" = necesita revisión humana
-      p.warningTypes = rp.warningTypes;
-      p.state = rp.state;                 // SELECTED | SELECTED_WARNING | NOT_SELECTED
-      p.reason = rp.reason;
-      p.subjects = rp.subjects;
-      p.selectionConfidence = rp.selectionConfidence;
-      p.score = rp.score;
-      p.audit = {
-        technicalScore: rp.technicalScore, faceScore: rp.faceScore, eyesScore: rp.eyesScore,
-        expressionScore: rp.expressionScore, sharpnessScore: rp.sharpnessScore,
-        exposureScore: rp.exposureScore, selectionConfidence: rp.selectionConfidence,
-      };
-      if (rp.warning) doubts++;
+    // Orden temporal (los frames de una ráfaga son secuenciales por nombre de archivo).
+    const ordered = [...g].sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
+    // Agrupación ESTRICTA: divide la ráfaga si la cara PRINCIPAL cambia de posición o ángulo.
+    const subgroups = splitByMainFace(ordered);
+    for (const sub of subgroups) {
+      const bid = nextBurstId++;
+      sub.forEach((p) => { p.burstId = bid; }); // re-numera secuencias tras la división
+      const byId = Object.fromEntries(sub.map((p) => [p.id, p]));
+      const res = decideSequence(sub.map(buildInput), bid);
+      for (const rp of res.photos) {
+        const p = byId[rp.id];
+        if (!p) continue;
+        p.selectedForEdit = rp.selected;
+        p.warning = rp.warning;
+        p.doubt = rp.warning;               // compat: "duda" = necesita revisión humana
+        p.warningTypes = rp.warningTypes;
+        p.state = rp.state;                 // SELECTED | SELECTED_WARNING | NOT_SELECTED
+        p.reason = rp.reason;
+        p.subjects = rp.subjects;
+        p.selectionConfidence = rp.selectionConfidence;
+        p.score = rp.score;
+        p.audit = {
+          technicalScore: rp.technicalScore, faceScore: rp.faceScore, eyesScore: rp.eyesScore,
+          expressionScore: rp.expressionScore, sharpnessScore: rp.sharpnessScore,
+          exposureScore: rp.exposureScore, selectionConfidence: rp.selectionConfidence,
+        };
+        if (rp.warning) doubts++;
+      }
     }
   }
   const rescued = 0;

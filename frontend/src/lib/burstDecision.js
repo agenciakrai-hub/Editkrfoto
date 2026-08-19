@@ -51,6 +51,48 @@ export const TIE_RATIO = 0.97;     // 2ª candidata >= 97% de la mejor → empat
 export const MAX_SELECTED = 2;     // máximo de fotos SELECTED+WARNING por empate
 export const LOW_SHARP = 45;       // sharpnessScore por debajo → poca nitidez
 export const VIS_LOW = 0.5;        // visibilidad por debajo → cara tapada/cortada
+export const FACE_SHARP_FLOOR = 0.12; // nitidez facial absoluta mínima (evita excluir todo si todas son blandas)
+export const FACE_SHARP_REL = 0.72;   // válida si nitidez facial >= 72% de la mejor de la secuencia
+
+// --- Agrupación estricta por cara principal ------------------------------
+// Umbrales de corte de secuencia (si la cara PRINCIPAL cambia mucho → secuencia nueva).
+export const SPLIT_POS = 0.14;     // desplazamiento del centro de la cara (fracción de frame)
+export const SPLIT_SIZE = 1.4;     // cambio de tamaño de cara (ratio)
+export const SPLIT_ROLL = 12;      // cambio de inclinación (grados)
+export const SPLIT_YAW = 0.18;     // cambio de giro (ratio)
+
+function mainFaceOf(faces) {
+  if (!faces || !faces.length) return null;
+  return faces.reduce((a, b) => (b.area > (a ? a.area : -1) ? b : a), null);
+}
+
+// Divide una ráfaga en subsecuencias cuando la cara PRINCIPAL cambia de posición o ángulo
+// de forma significativa. Puro y testeable. `photos` debe venir en orden temporal.
+export function splitByMainFace(photos, opts = {}) {
+  const posTol = opts.posTol ?? SPLIT_POS, sizeTol = opts.sizeTol ?? SPLIT_SIZE;
+  const rollTol = opts.rollTol ?? SPLIT_ROLL, yawTol = opts.yawTol ?? SPLIT_YAW;
+  const groups = [];
+  let cur = [];
+  for (const p of photos) {
+    if (!cur.length) { cur = [p]; continue; }
+    const a = mainFaceOf(cur[cur.length - 1].faces);
+    const b = mainFaceOf(p.faces);
+    let split = false;
+    if ((a === null) !== (b === null)) {
+      split = true; // aparece/desaparece la persona principal
+    } else if (a && b) {
+      const dpos = Math.hypot(a.cx - b.cx, a.cy - b.cy);
+      const ratio = Math.max(a.w || 0.001, 0.001) / Math.max(b.w || 0.001, 0.001);
+      const sizeChange = Math.max(ratio, 1 / ratio);
+      const droll = Math.abs((a.pose ? a.pose.roll : 0) - (b.pose ? b.pose.roll : 0));
+      const dyaw = Math.abs((a.pose ? a.pose.yaw : 0) - (b.pose ? b.pose.yaw : 0));
+      if (dpos > posTol || sizeChange > sizeTol || droll > rollTol || dyaw > yawTol) split = true;
+    }
+    if (split) { groups.push(cur); cur = [p]; } else cur.push(p);
+  }
+  if (cur.length) groups.push(cur);
+  return groups;
+}
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 function clamp01(v) { return clamp(v, 0, 1); }
@@ -150,7 +192,8 @@ function eyeVal(state) {
 }
 
 function subjectScore(s) {
-  return 100 * (0.45 * eyeVal(s.eyeState) + 0.25 * s.faceSharpness + 0.15 * s.expressionScore + 0.15 * s.visibility);
+  // Prioriza OJOS ABIERTOS y NITIDEZ FACIAL (regla del usuario); expresión/visibilidad secundarios.
+  return 100 * (0.5 * eyeVal(s.eyeState) + 0.35 * s.faceSharpness + 0.1 * s.visibility + 0.05 * s.expressionScore);
 }
 
 // Evalúa UNA foto (scores + warnings) con sus sujetos ya asignados.
@@ -160,7 +203,6 @@ function evalPhoto(p, subjects, trackingUncertain) {
   const exposureScore = pm
     ? Math.round(100 * clamp01(1 - Math.min(1, (pm.highClip || 0) * 4 + (pm.lowClip || 0) * 3)))
     : technicalScore;
-  const sharpnessScore = technicalScore; // proxy técnico global (la nitidez facial va por sujeto)
   const exposureOk = !pm || ((pm.highClip || 0) < 0.06 && (pm.lowClip || 0) < 0.12);
 
   const hasPeople = subjects.length > 0;
@@ -169,6 +211,11 @@ function evalPhoto(p, subjects, trackingUncertain) {
   const partial = subjects.filter((s) => s.eyeState === "partial");
   const occluded = subjects.filter((s) => s.faceDetected && s.visibility < VIS_LOW);
   const missing = subjects.filter((s) => !s.faceDetected);
+
+  // NITIDEZ del SUJETO PRINCIPAL (no de la imagen completa): base del descarte por trepidación.
+  const mainSharpSet = (mains.length ? mains : subjects).filter((s) => s.faceDetected);
+  const mainFaceSharp = mainSharpSet.length ? Math.max(...mainSharpSet.map((s) => s.faceSharpness)) : 0;
+  const sharpnessScore = hasPeople ? Math.round(mainFaceSharp * 100) : technicalScore;
 
   // eyesScore: 100 si todos los principales abiertos; resta por problemas (más si es principal).
   let eyesScore = 100;
@@ -195,10 +242,7 @@ function evalPhoto(p, subjects, trackingUncertain) {
   }
 
   const score = hasPeople ? Math.round(0.45 * technicalScore + 0.55 * faceScore) : technicalScore;
-  const techValid = (p.technicalScore ?? 0.5) >= TECH_MIN;
   const allMainOpen = mains.length > 0 && mains.every((s) => s.eyeState === "open");
-  const clean = techValid && sharpnessScore >= LOW_SHARP && exposureOk &&
-    (!hasPeople || (allMainOpen && missing.length === 0 && occluded.length === 0));
 
   // Warnings intrínsecos de la foto (los de selección se añaden al decidir).
   const warningTypes = [];
@@ -213,7 +257,8 @@ function evalPhoto(p, subjects, trackingUncertain) {
   if (hasPeople && trackingUncertain) warningTypes.push(WARNING.SUBJECT_TRACKING_UNCERTAIN);
 
   return {
-    id: p.id, filename: p.name || p.id, hasPeople, techValid, clean, score,
+    id: p.id, filename: p.name || p.id, hasPeople, score,
+    mainFaceSharp, exposureOk, allMainOpen, missingCount: missing.length, occludedCount: occluded.length,
     technicalScore, faceScore, eyesScore, expressionScore, sharpnessScore, exposureScore,
     subjects, warningTypes,
   };
@@ -229,6 +274,19 @@ export function decideSequence(photos, sequenceId = null) {
 
   const { subjectsByPhoto, refSubjects, trackingUncertain } = assignSubjects(list);
   const evals = list.map((p) => evalPhoto(p, subjectsByPhoto[p.id] || [], trackingUncertain));
+
+  // Validez técnica basada en la NITIDEZ FACIAL del sujeto principal (relativa a la secuencia):
+  // una toma trepidada pierde frente a otra con la MISMA persona más nítida.
+  const seqMaxFaceSharp = Math.max(0, ...evals.filter((e) => e.hasPeople).map((e) => e.mainFaceSharp));
+  const faceSharpMin = Math.max(FACE_SHARP_FLOOR, FACE_SHARP_REL * seqMaxFaceSharp);
+  for (const e of evals) {
+    e.techValid = e.hasPeople
+      ? (e.mainFaceSharp >= faceSharpMin && e.exposureOk)
+      : (e.technicalScore >= TECH_MIN * 100);
+    e.clean = e.techValid && (e.hasPeople
+      ? (e.allMainOpen && e.missingCount === 0 && e.occludedCount === 0)
+      : (e.sharpnessScore >= LOW_SHARP && e.exposureOk));
+  }
 
   // Cascada de pool NO VACÍO → garantiza selección siempre.
   const techValid = evals.filter((e) => e.techValid);

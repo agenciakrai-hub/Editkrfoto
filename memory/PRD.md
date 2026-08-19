@@ -217,6 +217,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - `CameraProfileStep` y `PresetParamsStep` ahora soportan modo `embedded` (ocultan su Continuar y notifican vía `onChange`); el preset es **opcional** (sin preset = perfil + básicas IA). `STEP_INDEX` actualizado.
 - Default de perfil: "Adobe Color". Compila limpio; verificación por compilación (el paso vive dentro del wizard, no accesible en headless).
 
+### Iteración 30 (2026-08-19): Motor de selección — agrupación estricta por cara + descarte por nitidez facial
+- **Agrupación más estricta** (`splitByMainFace` en burstDecision.js, puro): tras detectar caras, cada ráfaga se ordena temporalmente y se DIVIDE en secuencias separadas si la cara PRINCIPAL cambia de posición (>0.14), tamaño (>1.4×), inclinación/roll (>12°) o giro/yaw (>0.18), o si aparece/desaparece la persona. `faceEngine.detectFacesFromUrl` ahora calcula `pose {roll, yaw}` desde landmarks. Los burstId se renumeran tras la división.
+- **Descarte por trepidación = nitidez FACIAL del sujeto principal** (no de la imagen completa): `sharpnessScore` de fotos con personas = nitidez de la cara principal; `techValid` para personas exige nitidez facial ≥ max(0.12, 0.72×mejor de la secuencia) → una toma trepidada pierde frente a la MISMA persona más nítida. `subjectScore` rebalanceado para priorizar OJOS ABIERTOS (0.5) + NITIDEZ FACIAL (0.35).
+- Se mantiene: 1 seleccionada por secuencia salvo empate real (máx 2), garantía ≥1 por secuencia, inputSize 512.
+- Verificado: jest **71/71** (nuevos: descarte por cara borrosa, split por posición/ángulo/presencia). La herramienta Validación refleja todo (mismo pipeline). Validación con RAW reales → usuario.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
