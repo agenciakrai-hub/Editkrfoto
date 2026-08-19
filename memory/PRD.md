@@ -207,6 +207,10 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - `src/lib/validationReport.js` (puro) + tests 4/4 (regla cumplida, detección de incumplimiento, no-procesables excluidas, detalle de sujetos). jest total **66/66**.
 - USO: el usuario ejecuta una sesión RAW real, revisa el informe/exporta JSON y devuelve casos problemáticos para afinar el motor. Validación final RAW→XMP→Lightroom la hace el usuario.
 
+### Iteración 28 (2026-08-18): Chequeo de despliegue — CORS producción
+- Health check de despliegue: PASS (compilación, env-only URLs, supervisor, auth redirect, sin ops destructivas de DB).
+- Añadido el host de producción de Emergent a `CORS_ORIGINS` (`edit.krfoto.com` + `ai-xmp-gen.emergent.host` + preview). Se mantiene **lista explícita, NO `"*"`**: la auth usa cookies con credenciales y `allow_credentials = not wildcard`, por lo que `"*"` rompería el login. Verificado en runtime: backend responde `allow-origin: ai-xmp-gen.emergent.host` + `allow-credentials: true`.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
