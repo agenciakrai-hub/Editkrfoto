@@ -107,7 +107,8 @@ export default function ValidationTool() {
   const [faceProgress, setFaceProgress] = useState(0);
   const [report, setReport] = useState(null);
   const [fileMap, setFileMap] = useState({}); // filename -> File (para thumbnails)
-  const [filter, setFilter] = useState("all"); // all | selected | warning | <WARNING_TYPE>
+  const [filter, setFilter] = useState("all"); // all | selected | warning | lowconf | <WARNING_TYPE>
+  const [confThreshold, setConfThreshold] = useState(70); // umbral de selectionConfidence (0-100)
   const [folderName, setFolderName] = useState(null);
 
   const reset = () => { setReport(null); setPhase("idle"); setFilter("all"); setFolderName(null); setProgress({ done: 0, total: 0 }); setFaceProgress(0); };
@@ -154,8 +155,20 @@ export default function ValidationTool() {
     if (filter === "all") return report.sequences;
     if (filter === "selected") return report.sequences.filter((q) => q.selectedCount > 0);
     if (filter === "warning") return report.sequences.filter((q) => q.hasWarning);
+    if (filter === "lowconf") return report.sequences.filter((q) => q.selectionConfidence != null && q.selectionConfidence < confThreshold);
     return report.sequences.filter((q) => q.warnings.includes(filter));
-  }, [report, filter]);
+  }, [report, filter, confThreshold]);
+
+  // Agrupación por tipo de warning, ordenada por frecuencia (para ver qué problema domina).
+  const warningGroups = useMemo(() => {
+    if (!s) return [];
+    return Object.entries(s.warningBreakdown).sort((a, b) => b[1] - a[1]);
+  }, [s]);
+  const maxWarn = warningGroups.length ? warningGroups[0][1] : 0;
+  const lowConfCount = useMemo(
+    () => (report ? report.sequences.filter((q) => q.selectionConfidence != null && q.selectionConfidence < confThreshold).length : 0),
+    [report, confThreshold]
+  );
 
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
 
@@ -230,6 +243,24 @@ export default function ValidationTool() {
             <Stat testId="stat-nonproc" label="No procesables" value={s.nonProcessableSequences} />
           </div>
 
+          {warningGroups.length > 0 && (
+            <div className="mt-4 rounded-xl border border-zinc-800 bg-[#141418] p-4" data-testid="validation-warning-groups">
+              <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">Warnings por categoría (seleccionadas)</p>
+              <div className="mt-3 grid gap-2">
+                {warningGroups.map(([w, n]) => (
+                  <button key={w} data-testid={`warngroup-${w}`} onClick={() => setFilter(w)}
+                    className="group flex items-center gap-3 text-left">
+                    <span className="w-40 shrink-0 truncate text-xs text-zinc-300">{WARNING_LABELS[w] || w}</span>
+                    <span className="relative h-3 flex-1 overflow-hidden rounded-full bg-zinc-800">
+                      <span className="absolute inset-y-0 left-0 rounded-full bg-amber-400/70 transition-all group-hover:bg-amber-400" style={{ width: `${maxWarn ? Math.round((n / maxWarn) * 100) : 0}%` }} />
+                    </span>
+                    <span className="w-8 shrink-0 text-right font-mono text-xs text-amber-300">{n}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 flex flex-wrap items-center gap-2" data-testid="validation-filters">
             {[["all", `Todas (${report.sequences.length})`], ["selected", "Con selección"], ["warning", `Con warning (${s.selectedWarning})`]].map(([k, label]) => (
               <button key={k} data-testid={`filter-${k}`} onClick={() => setFilter(k)}
@@ -237,6 +268,16 @@ export default function ValidationTool() {
                 {label}
               </button>
             ))}
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-[#1c1c22] px-3 py-1 text-xs" data-testid="filter-lowconf-group">
+              <button data-testid="filter-lowconf" onClick={() => setFilter("lowconf")}
+                className={`font-medium ${filter === "lowconf" ? "text-sky-300" : "text-zinc-300 hover:text-zinc-100"}`}>
+                Confianza &lt;
+              </button>
+              <input data-testid="filter-conf-threshold" type="number" min={0} max={100} step={5} value={confThreshold}
+                onChange={(e) => { setConfThreshold(Math.max(0, Math.min(100, Number(e.target.value) || 0))); setFilter("lowconf"); }}
+                className="w-14 rounded border border-zinc-700 bg-[#101012] px-1.5 py-0.5 text-center font-mono text-xs text-zinc-100 outline-none focus:border-sky-400/60" />
+              <span className="font-mono text-[11px] text-sky-300">({lowConfCount})</span>
+            </span>
             {Object.entries(s.warningBreakdown).map(([w, n]) => (
               <button key={w} data-testid={`filter-${w}`} onClick={() => setFilter(w)}
                 className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium ${filter === w ? "border-amber-400/50 bg-amber-400/10 text-amber-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
