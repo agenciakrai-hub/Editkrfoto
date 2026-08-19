@@ -238,6 +238,11 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - Fix: `ReportStep.download` ahora, tras recibir el ZIP de sidecars del backend (XMP correcto con básicas+preset+5★/verde y aislamiento), **incrusta ese XMP DENTRO de cada .dng** (`embedXmpInDng`, re-apunta el TAG 700 de IFD0). CR3/otros siguen como sidecar. Se pasan los `File` a ReportStep vía `files={sendPhotos}`.
 - ZIP resultante: `.dng` con ajustes incrustados + `.xmp` para el resto. jest 71/71, compila.
 
+### Iteración 34 (2026-08-19): Fix Shadows (fuente única) + Fase A1 (metering híbrido con caras)
+- Shadows: eliminadas las compensaciones ocultas (`+8` en exposureEngine L46 y `-8` en basicEngine). Fuente única. Único cambio de regresión aprobado: `backlit·conservative` 12→20 (intencional).
+- A1: nuevo `hybridMetering.js` (`computeMeter`): combina cP50 con la luminancia del SUJETO (caras Fase 1) con peso DINÁMICO acotado (WMAX=0.6) según tamaño/confianza/nitidez/frontalidad; cara principal por prioridad (no faceCount). `computeBasic` acepta `meterOverride`; `computeAiBasics` lo calcula desde `analysis.faces`. Sin caras → cP50 (NO CHANGE, regresión intacta). Añadida `luma` facial en `detectFacesFromUrl`. Protección vestido blanco (p99≥250, solo ruta con caras). Studio pasa `faces`. Auditoría `metering`/`facesDetected`.
+- Tests: 125/125 (13 A1 boda + 41 regresión sin cambios salvo el aprobado); aislamiento verde.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

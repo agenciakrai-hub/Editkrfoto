@@ -56,7 +56,8 @@ function measureFaceSharpness(img, box) {
     ctx.drawImage(img, Math.max(0, box.x), Math.max(0, box.y), Math.max(1, box.width), Math.max(1, box.height), 0, 0, S, S);
     const d = ctx.getImageData(0, 0, S, S).data;
     const g = new Float32Array(S * S);
-    for (let i = 0, p = 0; i < d.length; i += 4, p++) g[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    let lumaSum = 0;
+    for (let i = 0, p = 0; i < d.length; i += 4, p++) { g[p] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; lumaSum += g[p]; }
     let mean = 0, n = 0;
     const lap = new Float32Array((S - 2) * (S - 2));
     for (let y = 1; y < S - 1; y++) for (let x = 1; x < S - 1; x++) {
@@ -68,8 +69,8 @@ function measureFaceSharpness(img, box) {
     let varr = 0;
     for (let k = 0; k < n; k++) { const v = lap[k] - mean; varr += v * v; }
     const raw = n ? varr / n : 0;
-    return raw / (raw + 150); // normaliza monótono a 0..1
-  } catch { return 0.5; }
+    return { sharpness: raw / (raw + 150), luma: lumaSum / (S * S) }; // sharpness 0..1 ; luma 0..255
+  } catch { return { sharpness: 0.5, luma: 128 }; }
 }
 
 // Ángulo/pose de la cara desde landmarks: roll (inclinación, grados) y yaw (giro, ratio).
@@ -102,11 +103,12 @@ export async function detectFacesFromUrl(url) {
     const ear = (eyeAspectRatio(pts.slice(36, 42)) + eyeAspectRatio(pts.slice(42, 48))) / 2;
     const smile = r.expressions?.happy ?? 0;
     const box = r.detection.box;
+    const crop = measureFaceSharpness(img, box);
     return {
       cx: (box.x + box.width / 2) / W, cy: (box.y + box.height / 2) / H,
       w: box.width / W, h: box.height / H, score: r.detection.score,
       descriptor: Array.from(r.descriptor), ear, smile, area: (box.width / W) * (box.height / H),
-      faceSharpness: measureFaceSharpness(img, box), pose: computePose(pts),
+      faceSharpness: crop.sharpness, luma: crop.luma, pose: computePose(pts),
     };
   });
 }

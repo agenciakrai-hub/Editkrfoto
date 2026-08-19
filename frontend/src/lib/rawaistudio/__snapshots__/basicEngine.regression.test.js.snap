@@ -58,7 +58,7 @@ Object {
     "exposure": 0.18,
     "highlights": -20,
     "saturation": 0,
-    "shadows": 12,
+    "shadows": 20,
     "temperature": null,
     "texture": 0,
     "tint": null,

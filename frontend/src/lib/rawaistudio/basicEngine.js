@@ -9,6 +9,7 @@
 //  - Respeta la intención de luz (low/high-key, contraluz, flash). No crea HDR ni look.
 import { computeBasic } from "./exposureEngine";
 import { computeWhiteBalance } from "./whiteBalance";
+import { computeMeter } from "./hybridMetering";
 
 export const AI_BASIC_KEYS = [
   "temperature", "tint", "exposure", "contrast", "highlights", "shadows",
@@ -59,8 +60,13 @@ export function computeAiBasics(analysis, opts = {}) {
   const dz = DEADZONE[deadzone] || DEADZONE.prudent;
   const snap = (v, t) => (Math.abs(v) < t ? 0 : Math.round(v));
 
+  // --- Metering HÍBRIDO (A1): incorpora las caras de Fase 1 como señal prioritaria acotada ---
+  const faces = (analysis && analysis.faces) || null;
+  const met = pm ? computeMeter(pm, faces) : { meter: null, faceWeight: 0, subjectLuma: null, reason: "sin fotometría" };
+  const meterOverride = (faces && faces.length) ? met.meter : null;
+
   // --- Exposición y tono (6): motor v2 + zona muerta "no tocar" ---
-  const base = pm ? computeBasic(pm, mode)
+  const base = pm ? computeBasic(pm, mode, meterOverride)
     : { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 };
   const exposure = Math.abs(base.exposure) < dz.exp ? 0 : Math.round(base.exposure * 100) / 100;
   const contrast = snap(base.contrast, dz.tone);
@@ -110,6 +116,8 @@ export function computeAiBasics(analysis, opts = {}) {
     editingConfidence,
     exposureClassification,
     subjectDetected: !!subjectDetected,
+    facesDetected: faces ? faces.length : 0,
+    metering: { meter: met.meter, faceWeight: met.faceWeight, subjectLuma: met.subjectLuma, reason: met.reason },
     skinDetected,
     whiteBalanceConfidence: wb.whiteBalanceConfidence,
     reasoningSummary: buildReasoning({ exposureClassification, exposure, highlights, shadows, wb, dehaze, vibrance, skinDetected }),

@@ -85,7 +85,7 @@ export default function Studio() {
       photos: sendPhotos.map((p) => ({
         filename: p.name,
         ai_basics: computeAiBasics(
-          { photometrics: p.photometrics, color: p.color },
+          { photometrics: p.photometrics, color: p.color, faces: p.faces },
           { mode, deadzone: "prudent", wbStrength: 0.5, subjectDetected: (p.faceCount || 0) > 0 }
         ).aiBasicAdjustments,
       })),

@@ -14,9 +14,9 @@ export const PRECISION_PROFILES = {
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 // Devuelve { exposure, contrast, highlights, shadows, whites, blacks } para ESTA foto.
-export function computeBasic(pm, mode = "balanced") {
+export function computeBasic(pm, mode = "balanced", meterOverride = null) {
   const P = PRECISION_PROFILES[mode] || PRECISION_PROFILES.balanced;
-  const meter = pm.cP50 || pm.p50; // medición ponderada al sujeto (centro)
+  const meter = (meterOverride != null ? meterOverride : (pm.cP50 || pm.p50)); // metering (híbrido con caras si se provee)
 
   // --- Exposición: lleva la medición del sujeto a la banda objetivo del modo ---
   let target;
@@ -31,6 +31,7 @@ export function computeBasic(pm, mode = "balanced") {
   if (pm.scene === "flash" && exposure > 0) exposure *= 0.5;                 // el sujeto ya está iluminado
   if (pm.scene === "backlit") exposure = clamp(exposure + 0.15, -P.expMax, P.expMax); // levanta un poco al sujeto
   if (pm.highClip > 0.05 && exposure > 0) exposure *= 0.5;                   // no quemar más las luces
+  if (meterOverride != null && pm.p99 >= 250 && exposure > 0) exposure *= 0.5; // vestido blanco (solo ruta con caras): no subexponer hacia blancos al límite
   exposure = Math.round(exposure * 100) / 100;
 
   const f = Math.pow(2, exposure);
