@@ -1,0 +1,973 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Regresión: los 13 parámetros por fixture y modo backlit · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0.33,
+    "highlights": -55,
+    "saturation": 0,
+    "shadows": 22,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo backlit · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0.3,
+    "highlights": -35,
+    "saturation": 0,
+    "shadows": 22,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo backlit · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0.18,
+    "highlights": -20,
+    "saturation": 0,
+    "shadows": 12,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo clara · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": -0.39,
+    "highlights": -18,
+    "saturation": 0,
+    "shadows": 6,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 34,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "sobreexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo clara · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": -0.44,
+    "highlights": -18,
+    "saturation": 0,
+    "shadows": 6,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 35,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "sobreexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo clara · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": -0.35,
+    "highlights": -18,
+    "saturation": 0,
+    "shadows": 5,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 20,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "sobreexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo correcta · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo correcta · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo correcta · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo flash · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo flash · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo flash · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo hazy · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 51,
+    "dehaze": 6,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo hazy · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 35,
+    "dehaze": 6,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo hazy · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 20,
+    "dehaze": 6,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo high_key · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": -6,
+    "dehaze": 0,
+    "exposure": -0.32,
+    "highlights": -15,
+    "saturation": 0,
+    "shadows": 5,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 28,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "sobreexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo high_key · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": -6,
+    "dehaze": 0,
+    "exposure": -0.37,
+    "highlights": -15,
+    "saturation": 0,
+    "shadows": 5,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 32,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "sobreexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo high_key · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": -6,
+    "dehaze": 0,
+    "exposure": -0.35,
+    "highlights": -15,
+    "saturation": 0,
+    "shadows": 5,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 20,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "sobreexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo low_key · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 5,
+    "clarity": 0,
+    "contrast": 8,
+    "dehaze": 0,
+    "exposure": 0.29,
+    "highlights": -15,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo low_key · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 5,
+    "clarity": 0,
+    "contrast": 8,
+    "dehaze": 0,
+    "exposure": 0.24,
+    "highlights": -15,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo low_key · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 5,
+    "clarity": 0,
+    "contrast": 8,
+    "dehaze": 0,
+    "exposure": 0.14,
+    "highlights": -15,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo oscura · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0.86,
+    "highlights": -21,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo oscura · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0.6,
+    "highlights": -21,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": -6,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo oscura · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0.35,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 11,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "subexpuesta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo piel_calida · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 5024,
+    "texture": 0,
+    "tint": -4,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": true,
+  "whiteBalanceConfidence": 0.84,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo piel_calida · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 5024,
+    "texture": 0,
+    "tint": -4,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": true,
+  "whiteBalanceConfidence": 0.84,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo piel_calida · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 5024,
+    "texture": 0,
+    "tint": -4,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": true,
+  "whiteBalanceConfidence": 0.84,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo plana · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo plana · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo plana · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 8,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo sin_foto · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo sin_foto · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo sin_foto · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": null,
+    "texture": 0,
+    "tint": null,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.85,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo wb_calida · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 4000,
+    "texture": 0,
+    "tint": 0,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.75,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo wb_calida · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 4000,
+    "texture": 0,
+    "tint": 0,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.75,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo wb_calida · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 4000,
+    "texture": 0,
+    "tint": 0,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.75,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo wb_fria · aggressive 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 7000,
+    "texture": 0,
+    "tint": -1,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.75,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo wb_fria · balanced 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 7000,
+    "texture": 0,
+    "tint": -1,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.75,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: los 13 parámetros por fixture y modo wb_fria · conservative 1`] = `
+Object {
+  "aiBasicAdjustments": Object {
+    "blacks": 0,
+    "clarity": 0,
+    "contrast": 0,
+    "dehaze": 0,
+    "exposure": 0,
+    "highlights": 0,
+    "saturation": 0,
+    "shadows": 0,
+    "temperature": 7000,
+    "texture": 0,
+    "tint": -1,
+    "vibrance": 0,
+    "whites": 0,
+  },
+  "editingConfidence": 0.75,
+  "exposureClassification": "correcta",
+  "skinDetected": false,
+  "whiteBalanceConfidence": 0.45,
+}
+`;
+
+exports[`Regresión: zona muerta prudente vs activa (foto correcta) activa (más sensible) 1`] = `
+Object {
+  "blacks": 0,
+  "clarity": 0,
+  "contrast": 0,
+  "dehaze": 0,
+  "exposure": 0.6,
+  "highlights": -21,
+  "saturation": 0,
+  "shadows": 0,
+  "temperature": null,
+  "texture": 0,
+  "tint": null,
+  "vibrance": 8,
+  "whites": -6,
+}
+`;
+
+exports[`Regresión: zona muerta prudente vs activa (foto correcta) prudente deja la foto correcta intacta 1`] = `
+Object {
+  "blacks": 0,
+  "clarity": 0,
+  "contrast": 0,
+  "dehaze": 0,
+  "exposure": 0,
+  "highlights": 0,
+  "saturation": 0,
+  "shadows": 0,
+  "temperature": null,
+  "texture": 0,
+  "tint": null,
+  "vibrance": 8,
+  "whites": 0,
+}
+`;
