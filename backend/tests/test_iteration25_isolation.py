@@ -140,11 +140,12 @@ def test_preset_template_converted_to_applied_settings():
     """El bug del DNG: un preset-template debe convertirse en AJUSTES APLICADOS.
     La envoltura de preset debe desaparecer para que Lightroom aplique los básicos."""
     out = server.build_photo_xmp("KRFC2606.dng", AI, {}, PRESET_TEMPLATE, "Adobe Color", "balanced")
-    # 1) La envoltura identitaria de preset NO debe sobrevivir.
-    for name in ("PresetType", "UUID", "ShowInPresets", "ShowInQuickActions",
-                 "SupportsAmount", "SupportsColor", "RequiresRGBTables",
-                 "CameraModelRestriction", "Name", "Group"):
+    # 1) La envoltura identitaria de preset NO debe sobrevivir (marcadores inequívocos de preset-template).
+    for name in ("PresetType", "ShowInPresets", "ShowInQuickActions",
+                 "RequiresRGBTables", "CameraModelRestriction"):
         assert not re.search(r'crs:' + name + r'[=>]', out), f"crs:{name} no debe quedar en el XMP aplicado"
+    # 1b) El UUID de PRESET original ("ABC") debe desaparecer (el UUID que quede es el del Look de perfil).
+    assert "ABC" not in out
     # 2) Los básicos de la IA quedan aplicados (no en 0 del preset).
     assert _attr_values(out, "Highlights2012") == ["-40"]
     assert _attr_values(out, "Blacks2012") == ["-6"]
@@ -153,11 +154,36 @@ def test_preset_template_converted_to_applied_settings():
     # 3) El look creativo se conserva.
     assert 'crs:ToneCurveName2012="Custom"' in out
     assert 'crs:SplitToningHighlightHue="45"' in out
+    # 3b) El PERFIL SELECCIONADO (Adobe Color) se inyecta como Look resoluble por UUID.
+    assert 'crs:Name="Adobe Color"' in out
+    assert 'crs:UUID="B952C231111CD8E0ECCF14B86BAA7077"' in out
+    assert 'crs:CameraProfile="Adobe Standard"' in out
     # 4) 5★ + verde de la selección final.
     assert 'xmp:Rating="5"' in out and 'xmp:Label="Verde"' in out
     # 5) XML bien formado.
     import xml.dom.minidom as _m
     _m.parseString(out.encode("utf-8"))
+
+
+def test_selected_profile_injected_as_look_with_correct_uuid():
+    """El perfil SELECCIONADO se inyecta como crs:Look resoluble por UUID (bug: salía Adobe Estándar)."""
+    preset = PRESET_TEMPLATE
+    for name, uuid in server.ADOBE_LOOK_UUIDS.items():
+        out = server.build_photo_xmp("A.dng", AI, {}, preset, name, "balanced")
+        look = re.search(r'<crs:Look>.*?</crs:Look>', out, re.DOTALL)
+        assert look, f"{name}: debe inyectarse un crs:Look"
+        assert f'crs:Name="{name}"' in look.group(0)
+        assert f'crs:UUID="{uuid}"' in look.group(0)
+        assert 'crs:Stubbed="true"' in look.group(0)
+        assert 'crs:CameraProfile="Adobe Standard"' in out  # base de los Look Adobe
+        import xml.dom.minidom as _m
+        _m.parseString(out.encode("utf-8"))
+
+
+def test_adobe_standard_profile_uses_camera_profile_not_look():
+    out = server.build_photo_xmp("A.dng", AI, {}, PRESET_TEMPLATE, "Adobe Standard", "balanced")
+    assert 'crs:CameraProfile="Adobe Standard"' in out
+    assert "<crs:Look>" not in out
 
 
 if __name__ == "__main__":

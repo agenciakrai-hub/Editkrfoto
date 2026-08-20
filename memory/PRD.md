@@ -268,6 +268,14 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - `ReportStep` adjunta el `File` a cada item del informe y pasa `onRetry`/`retrying` al panel.
 - **Verificado**: jest 146/146 (7 nuevos en `previewFilter.test.js`) + compila limpio. Flujo visible tras descargar en el paso de reporte (validación con RAW real la hace el usuario).
 
+### Iteración 41 (2026-06): Fix P0 — perfil de cámara seleccionado no se aplicaba (salía Adobe Estándar)
+- **Causa raíz doble**: (a) la iteración 35 borraba `crs:UUID`/`Name`/`Group` de forma GLOBAL, corrompiendo el `<crs:Look>` embebido del preset → Lightroom caía a Adobe Estándar; (b) la ruta con preset nunca inyectaba el perfil seleccionado.
+- **Fix (`server.py`)**: `_remove_profile` (quita Look/CameraProfile del preset) + `_apply_profile` (inyecta el seleccionado: `crs:Look` por UUID para Adobe, o `crs:CameraProfile` para Standard/custom) + `_set_crs_str_attr`/`_insert_before_desc_close`. La limpieza de envoltura se hace ANTES de inyectar el Look. `build_xmp` (sin preset) también corregido.
+- **Tabla `ADOBE_LOOK_UUIDS`** con UUID reales extraídos de los 5 XMP del usuario: Color `B952C231111CD8E0ECCF14B86BAA7077`, Landscape `6F9C877E84273F4E8271E6B91BEB36A1`, Vivid `EA1DE074F188405965EF399C72C221D9`, Portrait `D6496412E06A83789C499DF9540AA616`, Monochrome `0CFE8F8AB5F63B2A73CE0B0077D20817`. Adobe Standard → CameraProfile.
+- **PENDIENTE**: UUID de Adobe Neutral y Adaptive Color/Monochrome (el usuario no los envió → fallback CameraProfile). Añadir cuando facilite esos .xmp.
+- **Label de color**: se escribe `xmp:Label="Verde"` (LrC español). Si el usuario usa LrC inglés, cambiar a "Green".
+- **Verificado**: pytest 8/8 (`test_selected_profile_injected_as_look_with_correct_uuid`, `test_adobe_standard_profile_uses_camera_profile_not_look`). Fix en PREVIEW; requiere deploy para producción (edit.krfoto.com).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

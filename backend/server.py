@@ -360,11 +360,9 @@ CRS_MAP = {
 
 def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, process_precision: str) -> str:
     filename = _xesc(str(filename), {'"': "&quot;"})          # evita inyección XML (incluye comillas)
-    camera_profile = _xesc(str(camera_profile), {'"': "&quot;"})
     has_wb = params.get("temperature") is not None
     crs_lines = ['   crs:Version="15.0"',
                  f'   crs:ProcessVersion="11.0"',
-                 f'   crs:CameraProfile="{camera_profile}"',
                  f'   crs:WhiteBalance="{"Custom" if has_wb else "As Shot"}"',
                  f'   crs:HasSettings="True"']
     for key, value in params.items():
@@ -377,7 +375,7 @@ def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, proc
             crs_lines.append(f'   crs:{attr}="{int(round(float(value)))}"')
     crs_block = "\n".join(crs_lines)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    return f'''<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="RAW AI Studio 1.0">
+    xmp = f'''<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="RAW AI Studio 1.0">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <rdf:Description rdf:about=""
    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
@@ -393,6 +391,7 @@ def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, proc
  </rdf:RDF>
 </x:xmpmeta>
 '''
+    return _apply_profile(xmp, camera_profile)  # perfil SELECCIONADO (Look Adobe por UUID o CameraProfile)
 
 
 BASIC_ATTR_MAP = {
@@ -434,6 +433,75 @@ PRESET_WRAPPER_NAMES = [
     "CameraModelRestriction",
     "Name", "ShortName", "SortName", "Group", "Description",
 ]
+
+# UUID de los Look de perfil de Adobe (constantes globales de Lightroom/Camera Raw 2018+).
+# CLAVE: Lightroom resuelve un <crs:Look Stubbed="true"> por UUID, NO por nombre. Un UUID
+# ausente/incorrecto hace que Lightroom caiga a "Adobe Estándar".
+# (Se completan con los XMP exportados del propio Lightroom del usuario cuando estén disponibles.)
+ADOBE_LOOK_UUIDS = {
+    "Adobe Color": "B952C231111CD8E0ECCF14B86BAA7077",
+    "Adobe Landscape": "6F9C877E84273F4E8271E6B91BEB36A1",
+    "Adobe Vivid": "EA1DE074F188405965EF399C72C221D9",
+    "Adobe Portrait": "D6496412E06A83789C499DF9540AA616",
+    "Adobe Monochrome": "0CFE8F8AB5F63B2A73CE0B0077D20817",
+}
+# Perfiles legacy referenciados por crs:CameraProfile (sin bloque Look).
+CAMERA_PROFILE_NAMES = {"Adobe Standard"}
+
+
+def _set_crs_str_attr(xmp, attr, value):
+    """Inserta/actualiza un atributo crs de tipo TEXTO (p. ej. CameraProfile)."""
+    value = _xesc(str(value), {'"': "&quot;"})
+    if re.search(r'crs:' + attr + r'="[^"]*"', xmp):
+        return re.sub(r'crs:' + attr + r'="[^"]*"', f'crs:{attr}="{value}"', xmp, count=1)
+    idx = xmp.find("<rdf:Description")
+    if idx == -1:
+        return xmp
+    end = xmp.find(">", idx)
+    if end == -1:
+        return xmp
+    insert_at = end - 1 if xmp[end - 1] == "/" else end
+    return xmp[:insert_at] + f'\n   crs:{attr}="{value}"' + xmp[insert_at:]
+
+
+def _remove_profile(xmp):
+    """Quita el perfil embebido (Look + CameraProfile + Digest) para que gane el SELECCIONADO."""
+    xmp = re.sub(r'\s*<crs:Look>.*?</crs:Look>', '', xmp, flags=re.DOTALL)
+    xmp = re.sub(r'\s*<crs:Look\b[^>]*?/>', '', xmp)
+    xmp = re.sub(r'\s*crs:CameraProfileDigest="[^"]*"', '', xmp)
+    xmp = re.sub(r'\s*crs:CameraProfile="[^"]*"', '', xmp)
+    return xmp
+
+
+def _insert_before_desc_close(xmp, block):
+    idx = xmp.find("</rdf:Description>")
+    if idx == -1:
+        return xmp
+    return xmp[:idx] + "   " + block + "\n  " + xmp[idx:]
+
+
+def _apply_profile(xmp, profile_name):
+    """Inyecta el perfil SELECCIONADO. Perfiles Adobe modernos → bloque crs:Look (por UUID);
+    legacy/camera-matching/personalizados → crs:CameraProfile por nombre."""
+    name = (profile_name or "Adobe Color").strip()
+    uuid = ADOBE_LOOK_UUIDS.get(name)
+    if uuid:
+        xmp = _set_crs_str_attr(xmp, "CameraProfile", "Adobe Standard")  # base de los Look Adobe
+        name_esc = _xesc(name, {'"': "&quot;"})
+        look = ('<crs:Look>\n'
+                '    <rdf:Description\n'
+                f'     crs:Name="{name_esc}"\n'
+                '     crs:Amount="1"\n'
+                f'     crs:UUID="{uuid}"\n'
+                '     crs:SupportsAmount="false"\n'
+                '     crs:SupportsMonochrome="false"\n'
+                '     crs:SupportsOutputReferred="false"\n'
+                '     crs:Stubbed="true"/>\n'
+                '   </crs:Look>')
+        return _insert_before_desc_close(xmp, look)
+    return _set_crs_str_attr(xmp, "CameraProfile", name)
+
+
 
 
 def _fmt_basic(key, value):
@@ -511,8 +579,10 @@ def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, p
     if preset_xmp:
         # 1) ELIMINA del preset cualquier ajuste de los 13 básicos (+ WhiteBalance).
         xmp = _strip_crs_attrs(preset_xmp, STRIP_CRS_NAMES)
-        # 1b) CONVIERTE preset-template → ajustes aplicados (quita PresetType/UUID/ShowInPresets…),
-        #     para que Lightroom aplique los básicos a la foto (clave para DNG con XMP embebido).
+        # 1a) QUITA el perfil embebido del preset (Look/CameraProfile) → gana el SELECCIONADO.
+        xmp = _remove_profile(xmp)
+        # 1b) CONVIERTE preset-template → ajustes aplicados (quita PresetType/UUID/ShowInPresets…).
+        #     Se hace DESPUÉS de quitar el Look, para no corromper su UUID/Name.
         xmp = _strip_crs_attrs(xmp, PRESET_WRAPPER_NAMES)
         # 2) INYECTA los 13 valores calculados por la IA (temp/tint solo si hay corrección).
         for key, attr in AI_BASIC_ATTR_MAP.items():
@@ -521,6 +591,8 @@ def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, p
                 continue
             xmp = _set_crs_attr(xmp, attr, _fmt_basic(key, v))
         xmp = _set_wb(xmp, "Custom" if ai.get("temperature") is not None else "As Shot")
+        # 3) INYECTA el perfil de cámara SELECCIONADO (base de color antes del look del preset).
+        xmp = _apply_profile(xmp, camera_profile)
         return _set_xmp_meta(xmp)  # 5★ + etiqueta verde para la selección final
     # Sin preset: XMP nuevo con SOLO los 13 básicos de la IA.
     return build_xmp(filename, dict(ai), camera_profile or "Adobe Standard", precision or "balanced")
