@@ -334,15 +334,19 @@ PLUGIN_DIR = ROOT_DIR / "lightroom-plugin" / "rawai_studio.lrplugin"
 async def lr_plugin_download():
     if not PLUGIN_DIR.is_dir():
         raise HTTPException(status_code=404, detail="Plugin no disponible")
+    root = PLUGIN_DIR.parent  # /app/backend/lightroom-plugin
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for path in sorted(PLUGIN_DIR.rglob("*")):
-            if path.is_file():
-                arc = Path("rawai_studio.lrplugin") / path.relative_to(PLUGIN_DIR)
-                zf.write(path, arcname=str(arc))
-        readme = PLUGIN_DIR.parent / "INSTALAR.txt"
-        if readme.is_file():
-            zf.write(readme, arcname="INSTALAR.txt")
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            arc = str(path.relative_to(root))
+            zi = zipfile.ZipInfo(arc)
+            # bit ejecutable para el instalador de macOS
+            perm = 0o755 if path.suffix in (".command", ".sh") else 0o644
+            zi.external_attr = perm << 16
+            zi.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(zi, path.read_bytes())
     buf.seek(0)
     return StreamingResponse(buf, media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="rawai_studio_plugin.zip"'})

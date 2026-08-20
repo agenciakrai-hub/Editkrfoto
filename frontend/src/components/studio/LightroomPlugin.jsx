@@ -66,14 +66,17 @@ export default function LightroomPlugin({ projectId, payload, files = [] }) {
       </button>
 
       <div className="mt-4 rounded-lg border border-zinc-800 bg-[#101012] p-3 text-sm">
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Configuración del plugin (una vez)</p>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">Instalación del plugin (una vez)</p>
         <div className="flex items-center gap-2">
           <a data-testid="lr-plugin-download" href={pluginUrl}
             className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800">
-            <Download className="h-3.5 w-3.5" /> Descargar plugin (.lrplugin)
+            <Download className="h-3.5 w-3.5" /> Descargar plugin + instalador
           </a>
         </div>
-        <p className="mt-3 text-xs text-zinc-500">Pega este token en el plugin (Archivo › Administrador de plugins › RAW AI Studio):</p>
+        <p className="mt-3 text-xs text-zinc-500">
+          Descomprime el ZIP y ejecuta <span className="font-mono text-zinc-300">Instalar-Windows.bat</span> o <span className="font-mono text-zinc-300">Instalar-Mac.command</span>. El plugin se copia solo a Lightroom; al reiniciarlo estará cargado.
+        </p>
+        <p className="mt-3 text-xs text-zinc-500">Pega este token en el plugin (RAW AI Studio › Configurar):</p>
         <div className="mt-1 flex items-center gap-2">
           <code data-testid="lr-token" className="flex-1 truncate rounded bg-[#1c1c22] px-2 py-1.5 font-mono text-xs text-sky-200">{token || "…"}</code>
           <button data-testid="lr-token-copy" onClick={copyToken} className="rounded-md border border-zinc-700 p-1.5 text-zinc-300 hover:bg-zinc-800">

@@ -1,31 +1,38 @@
 RAW AI Studio — Plugin para Adobe Lightroom Classic
 =====================================================
 
-INSTALACIÓN (una sola vez)
---------------------------
-1. Descomprime este archivo .zip. Obtendrás la carpeta:
-       rawai_studio.lrplugin
-2. Abre Lightroom Classic.
-3. Menú: Archivo > Administrador de plugins (File > Plug-in Manager).
-4. Pulsa "Agregar" (Add) y selecciona la carpeta "rawai_studio.lrplugin".
-5. Pulsa "Listo" (Done).
+INSTALACIÓN AUTOMÁTICA (recomendada)
+------------------------------------
+1. Descomprime este .zip COMPLETO en una carpeta.
+2. Ejecuta el instalador según tu sistema:
+   - Windows: doble clic en  Instalar-Windows.bat
+     (si Windows muestra un aviso, elige "Más información" > "Ejecutar de todas formas").
+   - macOS:   doble clic en  Instalar-Mac.command
+     (si macOS lo bloquea: clic derecho > Abrir > Abrir; o ejecuta antes:
+      chmod +x Instalar-Mac.command)
+3. Abre (o reinicia) Lightroom Classic. El plugin "RAW AI Studio" se cargará solo.
+
+El instalador copia el plugin a la carpeta de módulos de Lightroom:
+   Windows: %APPDATA%\Adobe\Lightroom\Modules
+   macOS:   ~/Library/Application Support/Adobe/Lightroom/Modules
+
+INSTALACIÓN MANUAL (alternativa)
+--------------------------------
+1. Lightroom Classic > Archivo > Administrador de plugins.
+2. "Agregar" y selecciona la carpeta  rawai_studio.lrplugin  > "Listo".
 
 CONFIGURACIÓN (token)
 ---------------------
-1. En Lightroom: Biblioteca > Complementos adicionales > RAW AI Studio: Configurar (token).
-   (o desde Archivo > Exportar con preajuste según tu versión)
+1. En Lightroom: Biblioteca/Complementos > RAW AI Studio: Configurar (token).
 2. Pega el TOKEN que ves en la web de RAW AI Studio (panel "Enviar a Lightroom").
-3. Deja la URL del servidor tal cual salvo que uses un dominio propio.
-4. Guarda.
+3. Deja la URL del servidor tal cual y guarda.
 
 USO
 ---
-1. En la web de RAW AI Studio pulsa "Enviar a Lightroom" (esto sube los XMP a tu cuenta).
-2. En Lightroom Classic selecciona las fotos correspondientes.
-3. Menú: RAW AI Studio: Sincronizar seleccionadas.
-4. El plugin descargará los ajustes y los aplicará a las fotos.
+1. En la web pulsa "Enviar a Lightroom" (sube los XMP a tu cuenta).
+2. En Lightroom selecciona las fotos y usa: RAW AI Studio: Sincronizar seleccionadas.
 
 NOTA sobre formatos
 -------------------
-- En archivos RAW nativos (CR3, NEF, ARW) el plugin escribe un sidecar .xmp junto a la foto.
-- En DNG, Lightroom lee el XMP incrustado; si no ves cambios, usa "Leer metadatos del archivo".
+- RAW nativos (CR3, NEF, ARW): el plugin escribe un sidecar .xmp junto a la foto.
+- DNG: Lightroom lee el XMP incrustado; si no ves cambios usa "Leer metadatos del archivo".
