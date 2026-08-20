@@ -59,3 +59,25 @@ export function embedXmpInDng(input, xmpBody) {
   w32(entry + 8, appendAt);          // offset al nuevo XMP
   return { ok: true, bytes: out };
 }
+
+// Lee el paquete XMP incrustado en un DNG/TIFF (etiqueta 700 de IFD0). Devuelve el string o null.
+// Sirve para VERIFICAR, sin Lightroom, que el .dng exportado trae los ajustes.
+export function readXmpFromDng(input) {
+  const b = input instanceof Uint8Array ? input : new Uint8Array(input);
+  const r = tiffReader(b);
+  if (!r) return null;
+  const ifd0 = r.u32(4);
+  if (ifd0 + 2 > b.length) return null;
+  const count = r.u16(ifd0);
+  for (let i = 0; i < count; i++) {
+    const off = ifd0 + 2 + i * 12;
+    if (off + 12 > b.length) break;
+    if (r.u16(off) === TAG_XMP) {
+      const len = r.u32(off + 4);
+      const ptr = r.u32(off + 8);
+      if (ptr + len > b.length) return null;
+      return new TextDecoder().decode(b.slice(ptr, ptr + len));
+    }
+  }
+  return null;
+}

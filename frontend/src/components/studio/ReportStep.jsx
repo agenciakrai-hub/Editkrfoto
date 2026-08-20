@@ -4,13 +4,16 @@ import JSZip from "jszip";
 import { toast } from "sonner";
 import { CheckCircle2, Download, RotateCcw, FileArchive, Images } from "lucide-react";
 import api from "@/lib/api";
-import { embedXmpInDng } from "@/lib/dngXmp";
+import { embedXmpInDng, readXmpFromDng } from "@/lib/dngXmp";
+import { verifyXmp } from "@/lib/xmp/verifyXmp";
+import VerificationPanel from "@/components/studio/VerificationPanel";
 
 const baseName = (n) => n.replace(/\.[^.]+$/, "");
 const isDng = (n) => /\.dng$/i.test(n);
 
 export default function ReportStep({ report, projectId, payload, files = [], onRestart }) {
   const [downloading, setDownloading] = useState(false);
+  const [verification, setVerification] = useState(null);
 
   const download = async () => {
     setDownloading(true);
@@ -27,6 +30,7 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
       }));
 
       const out = new JSZip();
+      const verifyReport = [];
       let embedded = 0, sidecars = 0;
       for (const base of Object.keys(xmpByBase)) {
         const xmp = xmpByBase[base];
@@ -35,14 +39,22 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
           try {
             const bytes = new Uint8Array(await fileMap[dngName].arrayBuffer());
             const emb = embedXmpInDng(bytes, xmp);
-            if (emb.ok) { out.file(dngName, emb.bytes); embedded++; continue; }
+            if (emb.ok) {
+              out.file(dngName, emb.bytes);
+              // VERIFICA leyendo el XMP DE VUELTA del propio .dng generado (no del sidecar del backend).
+              verifyReport.push({ name: dngName, kind: "dng", verify: verifyXmp(readXmpFromDng(emb.bytes)) });
+              embedded++;
+              continue;
+            }
           } catch { /* respaldo: sidecar */ }
         }
         out.file(`${base}.xmp`, xmp);
+        verifyReport.push({ name: `${base}.xmp`, kind: "sidecar", verify: verifyXmp(xmp) });
         sidecars++;
       }
       const blob = await out.generateAsync({ type: "blob", compression: "DEFLATE" });
       saveAs(blob, "RAWAI_XMP.zip");
+      setVerification(verifyReport);
       toast.success("Paquete descargado", { description: `${embedded} DNG con ajustes incrustados · ${sidecars} sidecar .xmp` });
     } catch {
       toast.error("No se pudo generar el ZIP");
@@ -89,6 +101,8 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
           <RotateCcw className="h-4 w-4" /> Nuevo reportaje
         </button>
       </div>
+
+      <VerificationPanel report={verification} />
     </section>
   );
 }

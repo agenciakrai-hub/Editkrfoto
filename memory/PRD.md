@@ -249,6 +249,12 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **NO se tocó**: A1/A2, motor de IA, embedXmpInDng, ni los snapshots de regresión.
 - **Verificado**: pytest aislamiento 6/6 (nuevo test `test_preset_template_converted_to_applied_settings` con estructura real de preset). Salida contra el preset real del usuario: envoltura eliminada, `Highlights2012=-35`/`Blacks2012=-13` aplicados, look conservado, XML bien formado. Backend 200. Validación final RAW→DNG→Lightroom la hace el usuario.
 
+### Iteración 36 (2026-08-20): Verificación de exportación en la app (sin Lightroom)
+- Nuevo módulo puro `lib/xmp/verifyXmp.js` (`verifyXmp(xmp)`): detecta básicas de la IA aplicadas (13, con conteo de activas ≠0), presencia del look del preset (curva/HSL/split toning/color grading/máscaras/sharpening), si sigue siendo **preset-template** (`PresetType`/`UUID`/`ShowInPresets`/`SupportsAmount` → ⚠ no aplicado) y 5★+Verde.
+- `dngXmp.readXmpFromDng(bytes)`: lee de vuelta el paquete XMP incrustado (tag 700 de IFD0) del **propio .dng generado** (verificación real, no del sidecar del backend).
+- `ReportStep`: tras descargar el ZIP, construye un informe por archivo (DNG lee del .dng embebido; CR3 del sidecar) y muestra `VerificationPanel` (`components/studio/VerificationPanel.jsx`): resumen `N/M ok` + fila por foto con badges (Básicas IA · N activas / Look preset / Ajustes aplicados vs preset-template / 5★+Verde) y detalle expandible con los 13 valores + balance de blancos.
+- Verificado: jest 4/4 (`verifyXmp.test.js`: aplicado ok, preset-template marcado no-ok, vacío no-ok, round-trip embed→readXmpFromDng→verify). Compila limpio. Panel visible solo tras descargar (flujo con RAW real lo valida el usuario).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
