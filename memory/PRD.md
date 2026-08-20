@@ -294,6 +294,13 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Fix (`ReportStep.jsx`, solo frontend)**: `runExport(embed)` trocea la salida en varios ZIP por presupuesto de tamaño (~300 MB, compresión STORE), guardando cada parte secuencialmente y liberando memoria (RAWAI_XMP_parteN.zip). Nuevo botón "Solo XMP (ligero)" que empaqueta solo sidecars sin cargar DNG (garantiza descargar los XMP siempre). Nota UI sobre permiso de descargas múltiples.
 - **Verificado**: compila limpio; suite previa 151/151 intacta. Desplegado a producción.
 
+### Iteración 46 (2026-06): Sincronización directa con plugin de Lightroom (agente local Base44)
+- Nuevo `components/studio/LightroomSync.jsx` en el paso de reporte: genera los XMP (mismo motor) y hace `POST {agentUrl}/lr-direct/apply-xmp` con `{ photos:[{ path, xmp_content, rating:5, label:"Verde", selectedByAI:true }] }`, sin descargar ZIP.
+- Ruta absoluta: campo "Carpeta base" (el navegador no expone rutas absolutas) unido a `webkitRelativePath` (quitando el primer segmento). Config (baseFolder/agentUrl/token) persistida en localStorage.
+- Errores claros si el agente no responde (CORS / agente cerrado / mixed content). Token opcional vía header `X-Agent-Token`.
+- **Prerequisitos EXTERNOS (Base44/navegador)**: el agente debe enviar cabeceras CORS para `https://edit.krfoto.com` y responder al preflight OPTIONS; usar Chrome (permite `http://localhost` desde HTTPS). No testeable sin el agente local corriendo.
+- Compila limpio; suite previa intacta.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
