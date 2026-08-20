@@ -69,8 +69,18 @@ function measureFaceSharpness(img, box) {
     let varr = 0;
     for (let k = 0; k < n; k++) { const v = lap[k] - mean; varr += v * v; }
     const raw = n ? varr / n : 0;
-    return { sharpness: raw / (raw + 150), luma: lumaSum / (S * S) }; // sharpness 0..1 ; luma 0..255
-  } catch { return { sharpness: 0.5, luma: 128 }; }
+    // Piel facial (A2): media RGB de la zona central del recorte (evita pelo/bordes).
+    let sr = 0, sg = 0, sb = 0, sc = 0;
+    const lo = Math.floor(S * 0.28), hi = Math.ceil(S * 0.72);
+    for (let y = lo; y < hi; y++) for (let x = lo; x < hi; x++) {
+      const i = (y * S + x) * 4;
+      const r = d[i], gg = d[i + 1], b = d[i + 2];
+      const mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+      if (r > 60 && r >= gg && gg >= b && (mx - mn) > 8) { sr += r; sg += gg; sb += b; sc++; }
+    }
+    const skin = sc ? { r: sr / sc, g: sg / sc, b: sb / sc, count: sc } : { r: 0, g: 0, b: 0, count: 0 };
+    return { sharpness: raw / (raw + 150), luma: lumaSum / (S * S), skin }; // sharpness 0..1 ; luma 0..255 ; skin RGB
+  } catch { return { sharpness: 0.5, luma: 128, skin: { r: 0, g: 0, b: 0, count: 0 } }; }
 }
 
 // Ángulo/pose de la cara desde landmarks: roll (inclinación, grados) y yaw (giro, ratio).
@@ -108,7 +118,7 @@ export async function detectFacesFromUrl(url) {
       cx: (box.x + box.width / 2) / W, cy: (box.y + box.height / 2) / H,
       w: box.width / W, h: box.height / H, score: r.detection.score,
       descriptor: Array.from(r.descriptor), ear, smile, area: (box.width / W) * (box.height / H),
-      faceSharpness: crop.sharpness, luma: crop.luma, pose: computePose(pts),
+      faceSharpness: crop.sharpness, luma: crop.luma, skin: crop.skin, pose: computePose(pts),
     };
   });
 }

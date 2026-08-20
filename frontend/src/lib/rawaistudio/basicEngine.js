@@ -29,6 +29,21 @@ const DEADZONE = {
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
+// A2: agrega la PIEL de las caras (Fase 1) como referencia prioritaria de WB.
+// Pondera por tamaño de cara y nº de muestras; ignora caras sin piel fiable.
+function aggregateFaceSkin(faces) {
+  if (!faces || !faces.length) return null;
+  let r = 0, g = 0, b = 0, wsum = 0;
+  for (const f of faces) {
+    const sk = f && f.skin;
+    if (!sk || !sk.count || !(sk.r > 0)) continue;
+    const w = (f.area || 0.01) * Math.min(1, sk.count / 40);
+    r += sk.r * w; g += sk.g * w; b += sk.b * w; wsum += w;
+  }
+  if (!wsum) return null;
+  return { r: r / wsum, g: g / wsum, b: b / wsum };
+}
+
 function buildReasoning({ exposureClassification, exposure, highlights, shadows, wb, dehaze, vibrance, skinDetected }) {
   const parts = [];
   parts.push(`Fotografía ${exposureClassification}.`);
@@ -76,7 +91,14 @@ export function computeAiBasics(analysis, opts = {}) {
   const blacks = snap(base.blacks, dz.tone);
 
   // --- Balance de blancos (2) ---
-  const wb = computeWhiteBalance(color, { strength: wbStrength });
+  // Jerarquía A2: piel FACIAL (Fase 1) → piel agregada → gris-mundo → As Shot.
+  // Ambiente por color (golden hour/tungsteno) preserva la calidez deseada.
+  const faceSkin = aggregateFaceSkin(faces);
+  const wb = computeWhiteBalance(color, {
+    strength: wbStrength,
+    ambience: (pm && pm.ambience) || "neutral",
+    faceSkin,
+  });
 
   // --- Presencia (3): 0 salvo que la fotometría lo justifique (nada de HDR) ---
   const contrastIndex = pm ? pm.contrastIndex : 100;
@@ -120,6 +142,8 @@ export function computeAiBasics(analysis, opts = {}) {
     metering: { meter: met.meter, faceWeight: met.faceWeight, subjectLuma: met.subjectLuma, reason: met.reason },
     skinDetected,
     whiteBalanceConfidence: wb.whiteBalanceConfidence,
+    wbSource: wb.skinSource,
+    ambience: (pm && pm.ambience) || "neutral",
     reasoningSummary: buildReasoning({ exposureClassification, exposure, highlights, shadows, wb, dehaze, vibrance, skinDetected }),
   };
 }

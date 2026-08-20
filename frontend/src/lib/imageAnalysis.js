@@ -5,6 +5,7 @@ import { extractPreview } from "@/lib/rawThumb";
 import { orientToCanvas } from "@/lib/exif";
 import { autoToneFromHistogram } from "@/lib/selectionLogic";
 import { computePhotometrics } from "@/lib/rawaistudio/photometricAnalysis";
+import { classifyAmbience } from "@/lib/rawaistudio/sceneContext";
 import { computeBasic } from "@/lib/rawaistudio/exposureEngine";
 export { groupAndSelect, hamming, autoToneFromHistogram, PHASH_THRESHOLD, AMBIGUOUS_MARGIN } from "@/lib/selectionLogic";
 
@@ -106,7 +107,11 @@ function metricsFromBitmap(bmp) {
   };
   return { sharpness, exposure, hash, luma: avg, shadowClip, highClip, color,
     basic: autoToneFromHistogram(hist, total),
-    photometrics: computePhotometrics({ histGlobal: hist, totalGlobal: total, histCenter, totalCenter }) };
+    photometrics: (() => {
+      const pmv = computePhotometrics({ histGlobal: hist, totalGlobal: total, histCenter, totalCenter });
+      pmv.ambience = classifyAmbience(color, pmv).ambience; // contexto de color (golden hour/tungsteno)
+      return pmv;
+    })() };
 }
 
 export async function analyzeFile(file) {

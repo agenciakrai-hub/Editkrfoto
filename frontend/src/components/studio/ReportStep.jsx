@@ -42,14 +42,15 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
             if (emb.ok) {
               out.file(dngName, emb.bytes);
               // VERIFICA leyendo el XMP DE VUELTA del propio .dng generado (no del sidecar del backend).
-              verifyReport.push({ name: dngName, kind: "dng", verify: verifyXmp(readXmpFromDng(emb.bytes)) });
+              verifyReport.push({ name: dngName, kind: "dng", file: fileMap[dngName], verify: verifyXmp(readXmpFromDng(emb.bytes)) });
               embedded++;
               continue;
             }
           } catch { /* respaldo: sidecar */ }
         }
         out.file(`${base}.xmp`, xmp);
-        verifyReport.push({ name: `${base}.xmp`, kind: "sidecar", verify: verifyXmp(xmp) });
+        const srcFile = Object.keys(fileMap).find((fn) => baseName(fn) === base);
+        verifyReport.push({ name: `${base}.xmp`, kind: "sidecar", file: srcFile ? fileMap[srcFile] : null, verify: verifyXmp(xmp) });
         sidecars++;
       }
       const blob = await out.generateAsync({ type: "blob", compression: "DEFLATE" });
@@ -102,7 +103,7 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
         </button>
       </div>
 
-      <VerificationPanel report={verification} />
+      <VerificationPanel report={verification} onRetry={download} retrying={downloading} />
     </section>
   );
 }

@@ -255,6 +255,19 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - `ReportStep`: tras descargar el ZIP, construye un informe por archivo (DNG lee del .dng embebido; CR3 del sidecar) y muestra `VerificationPanel` (`components/studio/VerificationPanel.jsx`): resumen `N/M ok` + fila por foto con badges (Básicas IA · N activas / Look preset / Ajustes aplicados vs preset-template / 5★+Verde) y detalle expandible con los 13 valores + balance de blancos.
 - Verificado: jest 4/4 (`verifyXmp.test.js`: aplicado ok, preset-template marcado no-ok, vacío no-ok, round-trip embed→readXmpFromDng→verify). Compila limpio. Panel visible solo tras descargar (flujo con RAW real lo valida el usuario).
 
+### Iteración 37 (2026-08-20): Ajuste Fino IA (ambiente por color) + WB por piel facial (A2)
+- **Regla de oro**: cambios ADITIVOS y activados solo con señal nueva → los 41 snapshots de regresión siguen EXACTAMENTE igual (verificado).
+- **Ajuste Fino IA (contexto por color)**: nuevo `lib/rawaistudio/sceneContext.js` (`classifyAmbience(color, pm)` → golden_hour / tungsten / cool / neutral desde la dominante cromática). `imageAnalysis` lo calcula y lo adjunta a `photometrics.ambience`. En `exposureEngine`, golden_hour NO aclara de más (preserva el mood). En `whiteBalance`, golden hour/tungsteno **preservan la calidez** (no neutralizan del todo: conserva 70%/40%).
+- **WB por piel facial (A2)**: `faceEngine.measureFaceSharpness` ahora también muestrea la **piel** de la zona central del recorte de cada cara → `face.skin {r,g,b,count}`. `basicEngine.aggregateFaceSkin` pondera por tamaño/nº de muestras y pasa `faceSkin` a `computeWhiteBalance`, que aplica la jerarquía **piel facial → piel agregada → gris-mundo → As Shot** (`skinSource` en auditoría). Sin caras → ruta anterior intacta.
+- **Auditoría**: `computeAiBasics` expone `wbSource` y `ambience`.
+- **Verificado**: jest 146/146 (10 nuevos en `sceneContext.test.js`: ambiente, preservación de calidez golden/tungsteno, prioridad de piel facial, integración con caras) + 41 snapshots sin cambios.
+
+### Iteración 38 (2026-08-20): Alerta en Verificación + Antes/Después (aprox. visual)
+- **Alerta**: `VerificationPanel` marca en ROJO y muestra un banner con los archivos que salieron sin básicas o como preset-template, con botón **"Reintentar exportación"** (relanza la generación del ZIP). Fila en rojo si `verify.ok=false`.
+- **Antes/Después**: nuevo `lib/xmp/previewFilter.js` (`cssFilterFromBasics` traduce los 13 básicos a un filtro CSS: brillo/contraste/saturación/sepia/hue) + `components/studio/BeforeAfterMini.jsx` (carga perezosa de la miniatura real con `extractThumb`, muestra original vs filtrado). Toggle "Antes/Después" por fila. Es una **aproximación orientativa**, no el revelado real del RAW.
+- `ReportStep` adjunta el `File` a cada item del informe y pasa `onRetry`/`retrying` al panel.
+- **Verificado**: jest 146/146 (7 nuevos en `previewFilter.test.js`) + compila limpio. Flujo visible tras descargar en el paso de reporte (validación con RAW real la hace el usuario).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

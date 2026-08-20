@@ -30,6 +30,7 @@ export function computeBasic(pm, mode = "balanced", meterOverride = null) {
   if (pm.scene === "high_key") exposure = Math.min(exposure, P.expMax * 0.25); // no sobreexpone lo aireado
   if (pm.scene === "flash" && exposure > 0) exposure *= 0.5;                 // el sujeto ya está iluminado
   if (pm.scene === "backlit") exposure = clamp(exposure + 0.15, -P.expMax, P.expMax); // levanta un poco al sujeto
+  if (pm.ambience === "golden_hour" && exposure > 0) exposure *= 0.6; // preserva el mood cálido: no aclarar de más
   if (pm.highClip > 0.05 && exposure > 0) exposure *= 0.5;                   // no quemar más las luces
   if (meterOverride != null && pm.p99 >= 250 && exposure > 0) exposure *= 0.5; // vestido blanco (solo ruta con caras): no subexponer hacia blancos al límite
   exposure = Math.round(exposure * 100) / 100;
