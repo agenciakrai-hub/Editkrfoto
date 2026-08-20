@@ -58,7 +58,8 @@ export function verifyXmp(xmp) {
     hasSettings,
     rating,
     label,
-    ratingOk: rating === "5" && label === "Green",
+    // "Verde" (LrC español) es el valor escrito; se acepta "Green" por retrocompatibilidad.
+    ratingOk: rating === "5" && (label === "Verde" || label === "Green"),
     whiteBalance,
   };
 }

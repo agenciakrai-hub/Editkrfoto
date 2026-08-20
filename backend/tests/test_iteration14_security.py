@@ -174,7 +174,7 @@ class TestXmpHardening:
         assert "&lt;hack&gt;" in body, "no XML escaping for camera_profile"
         assert "&lt;x&gt;" in body, "no XML escaping for filename"
         assert 'xmp:Rating="5"' in body
-        assert 'xmp:Label="Green"' in body
+        assert 'xmp:Label="Verde"' in body
         # well-formed XML
         import xml.etree.ElementTree as ET
         ET.fromstring(body)
@@ -202,7 +202,7 @@ class TestXmpHardening:
         assert 'weird"' not in body, "raw quote leaked into attribute value"
         # rating/label preserved
         assert 'xmp:Rating="5"' in body
-        assert 'xmp:Label="Green"' in body
+        assert 'xmp:Label="Verde"' in body
         # Also confirm < > & escaped in both fields
         assert "&lt;" in body and "&gt;" in body and "&amp;" in body
 
@@ -226,7 +226,7 @@ class TestXmpHardening:
         body = zf.read("IMG_0001.xmp").decode("utf-8")
         assert "xmlns:crs" in body
         assert 'xmp:Rating="5"' in body
-        assert 'xmp:Label="Green"' in body
+        assert 'xmp:Label="Verde"' in body
         assert "Exposure2012" in body
 
     def test_generate_xmp_preserves_preset_look(self):
@@ -256,7 +256,7 @@ class TestXmpHardening:
         assert 'crs:Look="Modern 03"' in body, "preset Look not preserved"
         assert 'crs:ToneCurveName="Medium Contrast"' in body, "preset ToneCurve not preserved"
         assert 'xmp:Rating="5"' in body
-        assert 'xmp:Label="Green"' in body
+        assert 'xmp:Label="Verde"' in body
         # exposure basic should have been updated
         assert 'crs:Exposure2012="+0.40"' in body
 
@@ -287,7 +287,7 @@ class TestRegression:
         pid = TestRegression._pid
         # Per backend contract, items should be dicts {filename, selected, ...}
         state = {"finalSelection": [
-            {"filename": "IMG_0001.CR3", "selected": True, "source": "ai", "rating": 5, "label": "Green"},
+            {"filename": "IMG_0001.CR3", "selected": True, "source": "ai", "rating": 5, "label": "Verde"},
             {"filename": "IMG_0002.CR3", "selected": False, "source": "manual"},
         ]}
         r = requests.patch(f"{API}/projects/{pid}/state", headers=_hdr(), json=state)
@@ -319,7 +319,7 @@ class TestRegression:
         """After sending strings, patch back to proper dicts and confirm working."""
         pid = TestRegression._pid
         state = {"finalSelection": [
-            {"filename": "A.CR3", "selected": True, "source": "ai", "rating": 5, "label": "Green"},
+            {"filename": "A.CR3", "selected": True, "source": "ai", "rating": 5, "label": "Verde"},
             {"filename": "B.CR3", "selected": False, "source": "manual"},
         ]}
         r = requests.patch(f"{API}/projects/{pid}/state", headers=_hdr(), json=state)

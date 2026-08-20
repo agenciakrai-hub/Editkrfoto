@@ -327,7 +327,7 @@ async def get_final_selection(project_id: str, user: User = Depends(get_current_
         "project_id": project_id,
         "total": len(items),
         "selected_count": len(selected),
-        "items": items,           # {filename, selected, source: "ai"|"manual", rating:5, label:"Green"}
+        "items": items,           # {filename, selected, source: "ai"|"manual", rating:5, label:"Verde"}
         "selected": selected,
     }
 
@@ -387,7 +387,7 @@ def build_xmp(filename: str, params: Dict[str, float], camera_profile: str, proc
    crs:RawFileName="{filename}"
    crs:Precision="{process_precision}"
    xmp:Rating="5"
-   xmp:Label="Green"
+   xmp:Label="Verde"
 {crs_block}>
   </rdf:Description>
  </rdf:RDF>
@@ -483,10 +483,12 @@ def _set_wb(xmp, value):
 
 
 def _set_xmp_meta(xmp):
-    # Inserta/actualiza xmp:Rating="5" y xmp:Label="Green" sin borrar ningún otro campo del sidecar.
+    # Inserta/actualiza xmp:Rating="5" y xmp:Label="Verde" sin borrar ningún otro campo del sidecar.
+    # NOTA: en Lightroom la etiqueta se ve VERDE solo si el texto coincide con el juego de etiquetas
+    # activo. En LrC en español el verde por defecto es "Verde" (en inglés sería "Green").
     if "xmlns:xmp=" not in xmp:
         xmp = xmp.replace("<rdf:Description", '<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/"', 1)
-    for attr, val in (("Rating", "5"), ("Label", "Green")):
+    for attr, val in (("Rating", "5"), ("Label", "Verde")):
         apat = re.compile(r'(xmp:' + attr + r'=")([^"]*)(")')
         epat = re.compile(r'(<xmp:' + attr + r'>)([^<]*)(</xmp:' + attr + r'>)')
         if apat.search(xmp):

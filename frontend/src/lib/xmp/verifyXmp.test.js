@@ -15,7 +15,7 @@ const APPLIED = `<x:xmpmeta xmlns:x="adobe:ns:meta/">
    crs:Vibrance="0" crs:Saturation="0" crs:Dehaze="0"
    crs:ToneCurveName2012="Custom" crs:SplitToningHighlightHue="45"
    crs:WhiteBalance="As Shot"
-   xmp:Rating="5" xmp:Label="Green">
+   xmp:Rating="5" xmp:Label="Verde">
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>`;

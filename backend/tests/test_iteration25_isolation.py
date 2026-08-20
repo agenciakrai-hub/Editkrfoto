@@ -101,7 +101,7 @@ def test_fresh_xmp_without_preset_has_ai_basics():
     assert 'crs:Exposure2012="+0.35"' in out
     assert 'crs:Temperature="5200"' in out
     assert 'crs:WhiteBalance="Custom"' in out
-    assert 'xmp:Rating="5"' in out and 'xmp:Label="Green"' in out
+    assert 'xmp:Rating="5"' in out and 'xmp:Label="Verde"' in out
 
 
 # Preset-TEMPLATE exportado de Lightroom (PresetType/ShowInPresets/UUID/Supports*/Name/Group).
@@ -154,7 +154,7 @@ def test_preset_template_converted_to_applied_settings():
     assert 'crs:ToneCurveName2012="Custom"' in out
     assert 'crs:SplitToningHighlightHue="45"' in out
     # 4) 5★ + verde de la selección final.
-    assert 'xmp:Rating="5"' in out and 'xmp:Label="Green"' in out
+    assert 'xmp:Rating="5"' in out and 'xmp:Label="Verde"' in out
     # 5) XML bien formado.
     import xml.dom.minidom as _m
     _m.parseString(out.encode("utf-8"))
