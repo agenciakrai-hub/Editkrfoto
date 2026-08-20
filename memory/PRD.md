@@ -28,6 +28,10 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
     `/api/lr/complete`, y `/api/lr/plugin-download`.
   - `/api/lr/plugin-download` empaqueta `/app/backend/lightroom-plugin/` (plugin + INSTALAR.txt
     + Instalar-Windows.bat + Instalar-Mac.command) y preserva bit ejecutable en el .command.
+  - **Fix cuelgue "Enviando…" (jun 2026)**: nuevo endpoint `POST /api/projects/{id}/lr-push`
+    genera los XMP en el servidor y los encola directo en `lr_jobs` con `bulk_write` (import pymongo).
+    El frontend ya NO descarga/parsea ZIP en el navegador → el botón se resuelve al instante.
+    Probado con 506 fotos: ~0.2s, HTTP 200.
   - Instaladores copian el plugin a la carpeta Modules de Lightroom (auto-carga al reiniciar):
     Windows `%APPDATA%\Adobe\Lightroom\Modules`, macOS `~/Library/Application Support/Adobe/Lightroom/Modules`.
     Adobe NO permite auto-instalación desde navegador; esto es lo más cercano viable.

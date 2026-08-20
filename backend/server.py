@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+import pymongo
 import os
 import io
 import re
@@ -723,6 +724,38 @@ def build_zip_from_entries(entries):
             zf.writestr(name, content)
     buf.seek(0)
     return buf
+
+
+@api_router.post("/projects/{project_id}/lr-push")
+async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends(get_current_user)):
+    """Genera los XMP en el servidor y los encola directamente para el plugin de Lightroom.
+    Evita el round-trip de ZIP por el navegador (clave con cientos de fotos)."""
+    doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    data = req.model_dump()
+    photos = data.get("photos") or []
+    creative = data.get("creative_params") or {}
+    preset_xmp = data.get("preset_xmp")
+    now = datetime.now(timezone.utc).isoformat()
+    written = 0
+    ops = []
+    for p in photos:
+        fn = (p.get("filename") or "").strip()
+        if not fn:
+            continue
+        xmp = build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative,
+                              preset_xmp, req.camera_profile, req.precision_mode)
+        ops.append(pymongo.UpdateOne(
+            {"user_id": user.user_id, "filename": fn},
+            {"$set": {"user_id": user.user_id, "filename": fn, "xmp_content": xmp,
+                      "status": "pending", "updated_at": now},
+             "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
+            upsert=True))
+        written += 1
+    if ops:
+        await db.lr_jobs.bulk_write(ops, ordered=False)
+    return {"written": written}
 
 
 @api_router.post("/projects/{project_id}/generate-xmp")

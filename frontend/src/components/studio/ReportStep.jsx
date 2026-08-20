@@ -129,7 +129,7 @@ export default function ReportStep({ report, projectId, payload, files = [], aud
         Si tu navegador pide permiso para “descargar varios archivos”, acéptalo. <b>Solo XMP</b> descarga los sidecars sin incrustar en el DNG (muy ligero).
       </p>
 
-      <LightroomPlugin projectId={projectId} payload={payload} files={files} />
+      <LightroomPlugin projectId={projectId} payload={payload} />
 
       <VerificationPanel report={verification} onRetry={download} retrying={downloading} />
     </section>

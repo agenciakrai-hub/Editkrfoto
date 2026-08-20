@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
-import JSZip from "jszip";
 import { toast } from "sonner";
 import { Plug, Copy, Send, Loader2, Download } from "lucide-react";
 import api from "@/lib/api";
 
-const baseName = (n) => n.replace(/\.[^.]+$/, "");
-
 // Conexión PROPIA con Lightroom vía plugin (independiente de terceros).
 // La web envía los XMP a mi backend; el plugin de Lightroom los descarga y aplica.
-export default function LightroomPlugin({ projectId, payload, files = [] }) {
+export default function LightroomPlugin({ projectId, payload }) {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -24,20 +21,10 @@ export default function LightroomPlugin({ projectId, payload, files = [] }) {
   const push = async () => {
     setBusy(true);
     try {
-      const res = await api.post(`/projects/${projectId}/generate-xmp`, payload, { responseType: "blob" });
-      const inZip = await JSZip.loadAsync(res.data);
-      const xmpByBase = {};
-      await Promise.all(Object.keys(inZip.files).map(async (name) => {
-        if (name.toLowerCase().endsWith(".xmp")) xmpByBase[baseName(name)] = await inZip.files[name].async("string");
-      }));
-      const nameByBase = {};
-      for (const f of files) if (f && f.name) nameByBase[baseName(f.name)] = f.name;
-      const photos = Object.entries(xmpByBase).map(([base, xmp]) => ({
-        filename: nameByBase[base] || base, xmp_content: xmp,
-      }));
-      if (!photos.length) { toast.error("No hay XMP para enviar"); setBusy(false); return; }
-      const r = await api.post("/lr/push", { photos });
-      toast.success(`${r.data.written} fotos enviadas a Lightroom`, {
+      const r = await api.post(`/projects/${projectId}/lr-push`, payload);
+      const n = r.data?.written || 0;
+      if (!n) { toast.error("No hay XMP para enviar"); return; }
+      toast.success(`${n} fotos enviadas a Lightroom`, {
         description: "En Lightroom: selecciona las fotos y usa el plugin RAW AI Studio › Sincronizar.",
       });
     } catch {
