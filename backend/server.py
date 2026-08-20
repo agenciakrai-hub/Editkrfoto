@@ -420,6 +420,21 @@ STRIP_CRS_NAMES = list(dict.fromkeys(list(AI_BASIC_ATTR_MAP.values()) + [
     "WhiteBalance", "IncrementalTemperature", "IncrementalTint", "AutoWhiteVersion",
 ]))
 
+# Envoltura de PRESET-TEMPLATE de Lightroom. Si el .xmp subido es un PRESET exportado
+# (crs:PresetType/ShowInPresets/UUID/Supports*…), Lightroom lo trata como una DEFINICIÓN de
+# preset y NO aplica los básicos como ajustes de la foto (solo se ve el look creativo/máscaras).
+# Al generar el XMP por foto hay que convertir el preset-template en AJUSTES APLICADOS:
+# se eliminan estos campos identitarios; el look (curvas, HSL, split toning, máscaras) se conserva.
+PRESET_WRAPPER_NAMES = [
+    "PresetType", "UUID", "Cluster", "PresetSubtype",
+    "SupportsAmount", "SupportsAmount2", "SupportsColor", "SupportsMonochrome",
+    "SupportsHighDynamicRange", "SupportsNormalDynamicRange",
+    "SupportsSceneReferred", "SupportsOutputReferred",
+    "RequiresRGBTables", "ShowInPresets", "ShowInQuickActions",
+    "CameraModelRestriction",
+    "Name", "ShortName", "SortName", "Group", "Description",
+]
+
 
 def _fmt_basic(key, value):
     if key == "exposure":
@@ -494,6 +509,9 @@ def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, p
     if preset_xmp:
         # 1) ELIMINA del preset cualquier ajuste de los 13 básicos (+ WhiteBalance).
         xmp = _strip_crs_attrs(preset_xmp, STRIP_CRS_NAMES)
+        # 1b) CONVIERTE preset-template → ajustes aplicados (quita PresetType/UUID/ShowInPresets…),
+        #     para que Lightroom aplique los básicos a la foto (clave para DNG con XMP embebido).
+        xmp = _strip_crs_attrs(xmp, PRESET_WRAPPER_NAMES)
         # 2) INYECTA los 13 valores calculados por la IA (temp/tint solo si hay corrección).
         for key, attr in AI_BASIC_ATTR_MAP.items():
             v = ai.get(key)

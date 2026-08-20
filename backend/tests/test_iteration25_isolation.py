@@ -104,6 +104,62 @@ def test_fresh_xmp_without_preset_has_ai_basics():
     assert 'xmp:Rating="5"' in out and 'xmp:Label="Green"' in out
 
 
+# Preset-TEMPLATE exportado de Lightroom (PresetType/ShowInPresets/UUID/Supports*/Name/Group).
+# Lightroom lo trata como DEFINICIÓN de preset y NO aplica los básicos a la foto (bug DNG).
+PRESET_TEMPLATE = '''<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+   xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   crs:PresetType="Normal"
+   crs:UUID="C0E10BCA4BA746118A15F586D548F6D3"
+   crs:SupportsAmount="True"
+   crs:SupportsColor="True"
+   crs:RequiresRGBTables="False"
+   crs:ShowInPresets="True"
+   crs:ShowInQuickActions="False"
+   crs:CameraModelRestriction=""
+   crs:Version="18.0"
+   crs:HasSettings="True"
+   crs:Exposure2012="0.00"
+   crs:Contrast2012="0"
+   crs:Highlights2012="0"
+   crs:Shadows2012="0"
+   crs:Whites2012="0"
+   crs:Blacks2012="0"
+   crs:Dehaze="+9"
+   crs:ToneCurveName2012="Custom"
+   crs:SplitToningHighlightHue="45">
+   <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">PREST APP WEDING</rdf:li></rdf:Alt></crs:Name>
+   <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">PREST APP WEDING</rdf:li></rdf:Alt></crs:Group>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>'''
+
+
+def test_preset_template_converted_to_applied_settings():
+    """El bug del DNG: un preset-template debe convertirse en AJUSTES APLICADOS.
+    La envoltura de preset debe desaparecer para que Lightroom aplique los básicos."""
+    out = server.build_photo_xmp("KRFC2606.dng", AI, {}, PRESET_TEMPLATE, "Adobe Color", "balanced")
+    # 1) La envoltura identitaria de preset NO debe sobrevivir.
+    for name in ("PresetType", "UUID", "ShowInPresets", "ShowInQuickActions",
+                 "SupportsAmount", "SupportsColor", "RequiresRGBTables",
+                 "CameraModelRestriction", "Name", "Group"):
+        assert not re.search(r'crs:' + name + r'[=>]', out), f"crs:{name} no debe quedar en el XMP aplicado"
+    # 2) Los básicos de la IA quedan aplicados (no en 0 del preset).
+    assert _attr_values(out, "Highlights2012") == ["-40"]
+    assert _attr_values(out, "Blacks2012") == ["-6"]
+    assert _attr_values(out, "Contrast2012") == ["5"]
+    assert 'crs:HasSettings="True"' in out
+    # 3) El look creativo se conserva.
+    assert 'crs:ToneCurveName2012="Custom"' in out
+    assert 'crs:SplitToningHighlightHue="45"' in out
+    # 4) 5★ + verde de la selección final.
+    assert 'xmp:Rating="5"' in out and 'xmp:Label="Green"' in out
+    # 5) XML bien formado.
+    import xml.dom.minidom as _m
+    _m.parseString(out.encode("utf-8"))
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
