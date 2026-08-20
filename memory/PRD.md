@@ -284,6 +284,11 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Verificado**: jest 90/90, 41 snapshots SIN cambios, nuevo `subjectProtection.test.js` (4 casos). Compila limpio.
 - **NOTA**: fix client-side en PREVIEW; requiere DEPLOY para producción (edit.krfoto.com).
 
+### Iteración 44 (2026-06): Fix bloqueo en selecciones grandes ("no me deja seguir", 506 fotos, prod)
+- **Causa**: proyecto reanudado (analyzeFolder no calcula fotometría) → al pulsar "Continuar" en Revisión, `ensureMetrics` decodifica TODAS las fotos sin feedback (parece congelado). Además `auditByFile` (it.42) se calculaba anticipadamente sobre todas las fotos.
+- **Fix (`Studio.jsx`, solo frontend)**: (1) `ensureMetrics` con toast de progreso (%), timeout de 20s por archivo (RAW corrupto no cuelga la transición) y concurrencia 5; (2) `auditByFile` gated a `step === "report"`.
+- **Verificado**: jest 151/151, 41 snapshots intactos; compila limpio. Desplegado a producción.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.

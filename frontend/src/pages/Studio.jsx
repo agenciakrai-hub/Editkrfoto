@@ -67,14 +67,25 @@ export default function Studio() {
   const ensureMetrics = async (queue) => {
     const missing = queue.filter((p) => !p.photometrics && p.file);
     if (!missing.length) return;
-    await mapLimit(missing, 3, async (p) => {
+    let done = 0;
+    const t = toast.loading(`Analizando ${missing.length} fotos para los ajustes IA…`, { description: "0%" });
+    // timeout por archivo: un RAW corrupto no debe colgar toda la transición.
+    const withTimeout = (promise, ms) => Promise.race([
+      promise,
+      new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+    ]);
+    await mapLimit(missing, 5, async (p) => {
       try {
-        const m = await analyzeFile(p.file);
+        const m = await withTimeout(analyzeFile(p.file), 20000);
         if (m) { p.photometrics = m.photometrics; p.color = m.color; }
       } catch (err) {
         if (process.env.NODE_ENV === "development") console.warn("No se pudo analizar para básicos IA:", p.name, err);
+      } finally {
+        done += 1;
+        toast.loading(`Analizando ${missing.length} fotos para los ajustes IA…`, { id: t, description: `${Math.round((done / missing.length) * 100)}%` });
       }
     });
+    toast.dismiss(t);
   };
 
   const buildPayload = () => {
@@ -100,8 +111,10 @@ export default function Studio() {
 
   const xmpPayload = useMemo(() => presetInfo && buildPayload(), [sendPhotos, presetInfo, profileChoice]); // eslint-disable-line
 
-  // Auditoría del motor por foto (observabilidad): escena/ambiente, medición al sujeto, WB, motivo.
+  // Auditoría del motor por foto (observabilidad). Solo se calcula en el paso de REPORTE
+  // para no bloquear las transiciones con selecciones grandes (p. ej. 500+ fotos).
   const auditByFile = useMemo(() => {
+    if (step !== "report") return {};
     const mode = presetInfo?.precisionMode || "balanced";
     const m = {};
     for (const p of sendPhotos) {
@@ -118,7 +131,7 @@ export default function Studio() {
       };
     }
     return m;
-  }, [sendPhotos, presetInfo]);
+  }, [sendPhotos, presetInfo, step]);
 
   if (!project) {
     return <AppShell><p className="text-sm text-zinc-500" data-testid="studio-loading">Cargando proyecto…</p></AppShell>;
