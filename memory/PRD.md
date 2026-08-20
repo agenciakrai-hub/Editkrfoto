@@ -301,6 +301,10 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Prerequisitos EXTERNOS (Base44/navegador)**: el agente debe enviar cabeceras CORS para `https://edit.krfoto.com` y responder al preflight OPTIONS; usar Chrome (permite `http://localhost` desde HTTPS). No testeable sin el agente local corriendo.
 - Compila limpio; suite previa intacta.
 
+### Iteración 47 (2026-06): Eliminada la integración con Base44 / plugin Lightroom
+- Por petición del usuario, la app NO debe tener nada vinculado a Base44. Eliminado el componente `LightroomSync.jsx` y su uso en `ReportStep`. Sin referencias residuales (lr-direct/localhost:7457/apply-xmp/X-Agent-Token).
+- La app queda independiente: entrega vía descarga (ZIP troceado por tamaño) + "Solo XMP (ligero)". Compila limpio.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
