@@ -50,6 +50,21 @@ describe("verifyXmp", () => {
     expect(verifyXmp(null).ok).toBe(false);
     expect(verifyXmp("").ok).toBe(false);
   });
+
+  test("XMP con crs:Look de PERFIL (UUID + SupportsAmount) NO es preset-template", () => {
+    const withLook = APPLIED.replace(
+      "</rdf:Description>",
+      `<crs:Look>
+        <rdf:Description crs:Name="Adobe Landscape" crs:Amount="1"
+         crs:UUID="6F9C877E84273F4E8271E6B91BEB36A1"
+         crs:SupportsAmount="false" crs:SupportsMonochrome="false"
+         crs:SupportsOutputReferred="false" crs:Stubbed="true"/>
+       </crs:Look></rdf:Description>`
+    );
+    const v = verifyXmp(withLook);
+    expect(v.isPresetTemplate).toBe(false); // el Look del perfil NO debe marcarse como wrapper
+    expect(v.ok).toBe(true);
+  });
 });
 
 describe("readXmpFromDng round-trip", () => {

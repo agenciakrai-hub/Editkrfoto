@@ -16,8 +16,10 @@ const LOOK_ATTRS = [
   "ColorGradeMidtoneHue", "ColorGradeHighlightHue", "Sharpness", "MaskGroupBasedCorrections",
 ];
 
-// Envoltura de preset-template: si aparece, Lightroom NO aplica los básicos a la foto (bug DNG).
-const PRESET_WRAPPER = ["PresetType", "UUID", "ShowInPresets", "SupportsAmount"];
+// Marcadores INEQUÍVOCOS de preset-template: si el XMP los trae, Lightroom lo trata como
+// DEFINICIÓN de preset y no aplica los básicos a la foto (bug DNG). OJO: NO usar UUID ni
+// SupportsAmount aquí, porque el <crs:Look> del PERFIL de cámara los contiene legítimamente.
+const PRESET_WRAPPER = ["PresetType", "ShowInPresets"];
 
 function attr(xmp, name) {
   const a = xmp.match(new RegExp('crs:' + name + '="([^"]*)"'));
