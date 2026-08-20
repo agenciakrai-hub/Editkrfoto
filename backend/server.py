@@ -328,7 +328,7 @@ async def lr_pending(request: Request):
     ).to_list(5000)
     return {"jobs": docs, "count": len(docs)}
 
-PLUGIN_DIR = Path("/app/lightroom-plugin/rawai_studio.lrplugin")
+PLUGIN_DIR = ROOT_DIR / "lightroom-plugin" / "rawai_studio.lrplugin"
 
 @api_router.get("/lr/plugin-download")
 async def lr_plugin_download():
