@@ -11,7 +11,7 @@ import VerificationPanel from "@/components/studio/VerificationPanel";
 const baseName = (n) => n.replace(/\.[^.]+$/, "");
 const isDng = (n) => /\.dng$/i.test(n);
 
-export default function ReportStep({ report, projectId, payload, files = [], onRestart }) {
+export default function ReportStep({ report, projectId, payload, files = [], audit = {}, onRestart }) {
   const [downloading, setDownloading] = useState(false);
   const [verification, setVerification] = useState(null);
 
@@ -42,7 +42,7 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
             if (emb.ok) {
               out.file(dngName, emb.bytes);
               // VERIFICA leyendo el XMP DE VUELTA del propio .dng generado (no del sidecar del backend).
-              verifyReport.push({ name: dngName, kind: "dng", file: fileMap[dngName], verify: verifyXmp(readXmpFromDng(emb.bytes)) });
+              verifyReport.push({ name: dngName, kind: "dng", file: fileMap[dngName], audit: audit[dngName] || null, verify: verifyXmp(readXmpFromDng(emb.bytes)) });
               embedded++;
               continue;
             }
@@ -50,7 +50,7 @@ export default function ReportStep({ report, projectId, payload, files = [], onR
         }
         out.file(`${base}.xmp`, xmp);
         const srcFile = Object.keys(fileMap).find((fn) => baseName(fn) === base);
-        verifyReport.push({ name: `${base}.xmp`, kind: "sidecar", file: srcFile ? fileMap[srcFile] : null, verify: verifyXmp(xmp) });
+        verifyReport.push({ name: `${base}.xmp`, kind: "sidecar", file: srcFile ? fileMap[srcFile] : null, audit: srcFile ? (audit[srcFile] || null) : null, verify: verifyXmp(xmp) });
         sidecars++;
       }
       const blob = await out.generateAsync({ type: "blob", compression: "DEFLATE" });

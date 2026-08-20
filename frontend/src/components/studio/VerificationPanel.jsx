@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldCheck, ShieldAlert, ChevronDown, Check, Minus, X, AlertTriangle, RefreshCw, Eye } from "lucide-react";
+import { ShieldCheck, ShieldAlert, ChevronDown, Check, Minus, X, AlertTriangle, RefreshCw, Eye, Cpu } from "lucide-react";
 import BeforeAfterMini from "@/components/studio/BeforeAfterMini";
 
 const Badge = ({ ok, warn, children, testid }) => {
@@ -54,6 +54,34 @@ function VerificationRow({ item }) {
       </div>
 
       {preview && <BeforeAfterMini file={item.file} basics={v.basics} />}
+
+      {open && item.audit && (
+        <div data-testid={`verify-audit-${item.name}`} className="mt-3 rounded-md border border-indigo-500/25 bg-indigo-500/[0.06] p-3">
+          <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-300">
+            <Cpu className="h-3.5 w-3.5" /> Auditoría del motor IA
+          </p>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {[
+              ["Exposición", item.audit.exposureClassification],
+              ["Escena/Ambiente", item.audit.ambience],
+              ["Sujeto (luma)", item.audit.subjectLuma ?? "—"],
+              ["Medición", item.audit.meter ?? "—"],
+              ["Peso caras", item.audit.faceWeight ?? 0],
+              ["WB (fuente)", item.audit.wbSource],
+              ["Confianza edición", item.audit.editingConfidence ?? "—"],
+              ["Confianza WB", item.audit.whiteBalanceConfidence ?? "—"],
+            ].map(([label, val]) => (
+              <div key={label} className="rounded bg-[#16161c] px-2 py-1.5">
+                <span className="block text-[10px] text-zinc-500">{label}</span>
+                <span className="font-mono text-xs text-indigo-200">{String(val)}</span>
+              </div>
+            ))}
+          </div>
+          {item.audit.reasoningSummary && (
+            <p className="mt-2 text-[11px] leading-relaxed text-zinc-400">{item.audit.reasoningSummary}</p>
+          )}
+        </div>
+      )}
 
       {open && v.hasBasics && (
         <div data-testid={`verify-detail-${item.name}`} className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-4">

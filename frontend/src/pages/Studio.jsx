@@ -100,6 +100,26 @@ export default function Studio() {
 
   const xmpPayload = useMemo(() => presetInfo && buildPayload(), [sendPhotos, presetInfo, profileChoice]); // eslint-disable-line
 
+  // Auditoría del motor por foto (observabilidad): escena/ambiente, medición al sujeto, WB, motivo.
+  const auditByFile = useMemo(() => {
+    const mode = presetInfo?.precisionMode || "balanced";
+    const m = {};
+    for (const p of sendPhotos) {
+      const r = computeAiBasics(
+        { photometrics: p.photometrics, color: p.color, faces: p.faces },
+        { mode, deadzone: "prudent", wbStrength: 0.5, subjectDetected: (p.faceCount || 0) > 0 }
+      );
+      m[p.name] = {
+        subjectLuma: r.subjectLuma, faceWeight: r.faceWeight, meter: r.meter,
+        ambience: r.ambience, wbSource: r.wbSource, skinDetected: r.skinDetected,
+        exposureClassification: r.exposureClassification,
+        editingConfidence: r.editingConfidence, whiteBalanceConfidence: r.whiteBalanceConfidence,
+        reasoningSummary: r.reasoningSummary,
+      };
+    }
+    return m;
+  }, [sendPhotos, presetInfo]);
+
   if (!project) {
     return <AppShell><p className="text-sm text-zinc-500" data-testid="studio-loading">Cargando proyecto…</p></AppShell>;
   }
@@ -206,7 +226,7 @@ export default function Studio() {
 
         {step === "report" && result && (
           <ReportStep report={result} projectId={projectId} payload={xmpPayload} files={sendPhotos}
-            onRestart={() => navigate("/dashboard")} />
+            audit={auditByFile} onRestart={() => navigate("/dashboard")} />
         )}
       </div>
     </AppShell>
