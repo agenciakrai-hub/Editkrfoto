@@ -289,6 +289,11 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Fix (`Studio.jsx`, solo frontend)**: (1) `ensureMetrics` con toast de progreso (%), timeout de 20s por archivo (RAW corrupto no cuelga la transición) y concurrencia 5; (2) `auditByFile` gated a `step === "report"`.
 - **Verificado**: jest 151/151, 41 snapshots intactos; compila limpio. Desplegado a producción.
 
+### Iteración 45 (2026-06): Fix descarga ZIP en selecciones grandes (memoria del navegador)
+- **Causa**: con muchos DNG (506), la descarga cargaba todos los DNG en memoria en UN solo ZIP → navegador sin memoria → fallo.
+- **Fix (`ReportStep.jsx`, solo frontend)**: `runExport(embed)` trocea la salida en varios ZIP por presupuesto de tamaño (~300 MB, compresión STORE), guardando cada parte secuencialmente y liberando memoria (RAWAI_XMP_parteN.zip). Nuevo botón "Solo XMP (ligero)" que empaqueta solo sidecars sin cargar DNG (garantiza descargar los XMP siempre). Nota UI sobre permiso de descargas múltiples.
+- **Verificado**: compila limpio; suite previa 151/151 intacta. Desplegado a producción.
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
