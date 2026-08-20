@@ -81,7 +81,7 @@ export function computeAiBasics(analysis, opts = {}) {
   const meterOverride = (faces && faces.length) ? met.meter : null;
 
   // --- Exposición y tono (6): motor v2 + zona muerta "no tocar" ---
-  const base = pm ? computeBasic(pm, mode, meterOverride)
+  const base = pm ? computeBasic(pm, mode, meterOverride, met.subjectLuma)
     : { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 };
   const exposure = Math.abs(base.exposure) < dz.exp ? 0 : Math.round(base.exposure * 100) / 100;
   const contrast = snap(base.contrast, dz.tone);
@@ -144,6 +144,9 @@ export function computeAiBasics(analysis, opts = {}) {
     whiteBalanceConfidence: wb.whiteBalanceConfidence,
     wbSource: wb.skinSource,
     ambience: (pm && pm.ambience) || "neutral",
+    subjectLuma: met.subjectLuma != null ? Math.round(met.subjectLuma) : null,
+    faceWeight: Math.round((met.faceWeight || 0) * 100) / 100,
+    meter: met.meter != null ? Math.round(met.meter) : (pm ? Math.round(pm.cP50 || pm.p50) : null),
     reasoningSummary: buildReasoning({ exposureClassification, exposure, highlights, shadows, wb, dehaze, vibrance, skinDetected }),
   };
 }

@@ -276,6 +276,14 @@ Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, 
 - **Label de color**: se escribe `xmp:Label="Verde"` (LrC español). Si el usuario usa LrC inglés, cambiar a "Green".
 - **Verificado**: pytest 8/8 (`test_selected_profile_injected_as_look_with_correct_uuid`, `test_adobe_standard_profile_uses_camera_profile_not_look`). Fix en PREVIEW; requiere deploy para producción (edit.krfoto.com).
 
+### Iteración 42 (2026-06): Precisión del motor — no sobreiluminar a las personas (retratos)
+- **Síntoma (KRFC2585)**: retrato familiar exterior luminoso salía con `Exposición +0.10`, `Contraste +26`, `Blancos +23` → personas sobreexpuestas. Otras fotos del mismo set salían bien (KRFC2485: Exp 0, Luces −25, Blancos −5).
+- **Causa raíz**: `computeBasic` calcula `Blancos` estirando el punto blanco GLOBAL hacia 246 ignorando al sujeto; en retratos con ropa/fondo claros eso revienta al sujeto. La exposición híbrida además añadía un pequeño lift.
+- **Fix (`exposureEngine.computeBasic`, gated por CARAS)**: nueva PROTECCIÓN DEL SUJETO — con caras detectadas y sujeto claro (`subjectLuma`): exposición no sube (>=122→0), blancos NO se estiran hacia arriba (>=118→whites≤0; recuperación de blancos quemados SIEMPRE permitida), contraste positivo contenido (>=122→≤toneMax·0.45). `basicEngine` pasa `met.subjectLuma`. Fotos SIN caras → comportamiento clásico intacto.
+- **Observabilidad**: la auditoría de `computeAiBasics` ahora expone `subjectLuma`, `faceWeight`, `meter` (para tuning basado en datos / futura "Auditoría Visible").
+- **Verificado**: jest 90/90, 41 snapshots SIN cambios, nuevo `subjectProtection.test.js` (4 casos). Compila limpio.
+- **NOTA**: fix client-side en PREVIEW; requiere DEPLOY para producción (edit.krfoto.com).
+
 ## Backlog / Próximos
 - P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
 - P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
