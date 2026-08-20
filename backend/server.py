@@ -265,6 +265,101 @@ async def logout(request: Request, response: Response):
     return {"ok": True}
 
 
+# ==== Conexión propia con plugin de Lightroom (independiente de terceros) ====
+# El plugin (LrHttp) se conecta a este backend HTTPS con un token de emparejamiento por cuenta.
+# Empareja las fotos por NOMBRE DE ARCHIVO; el plugin resuelve la ruta desde el catálogo.
+
+class LrPushBody(BaseModel):
+    photos: List[Dict[str, Any]] = Field(default_factory=list)  # [{filename, xmp_content}]
+
+class LrCompleteBody(BaseModel):
+    ids: List[str] = Field(default_factory=list)
+
+async def _user_from_lr_token(request: Request) -> str:
+    tok = request.headers.get("X-LR-Token") or request.query_params.get("token")
+    if not tok:
+        raise HTTPException(status_code=401, detail="Falta token del plugin")
+    u = await db.users.find_one({"lr_token": tok}, {"_id": 0, "user_id": 1})
+    if not u:
+        raise HTTPException(status_code=401, detail="Token de plugin inválido")
+    return u["user_id"]
+
+@api_router.get("/lr/token")
+async def lr_get_token(user: User = Depends(get_current_user)):
+    doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "lr_token": 1})
+    tok = (doc or {}).get("lr_token")
+    if not tok:
+        tok = f"lrk_{uuid.uuid4().hex}"
+        await db.users.update_one({"user_id": user.user_id}, {"$set": {"lr_token": tok}})
+    return {"token": tok}
+
+@api_router.post("/lr/token/rotate")
+async def lr_rotate_token(user: User = Depends(get_current_user)):
+    tok = f"lrk_{uuid.uuid4().hex}"
+    await db.users.update_one({"user_id": user.user_id}, {"$set": {"lr_token": tok}})
+    return {"token": tok}
+
+@api_router.post("/lr/push")
+async def lr_push(body: LrPushBody, user: User = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    written = 0
+    for p in body.photos:
+        fn = (p.get("filename") or "").strip()
+        xmp = p.get("xmp_content") or ""
+        if not fn or not xmp:
+            continue
+        # una entrada pendiente por (usuario, nombre de archivo): la última sustituye a la anterior.
+        await db.lr_jobs.update_one(
+            {"user_id": user.user_id, "filename": fn},
+            {"$set": {"user_id": user.user_id, "filename": fn, "xmp_content": xmp,
+                      "status": "pending", "updated_at": now},
+             "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
+            upsert=True,
+        )
+        written += 1
+    return {"written": written}
+
+@api_router.get("/lr/pending")
+async def lr_pending(request: Request):
+    user_id = await _user_from_lr_token(request)
+    docs = await db.lr_jobs.find(
+        {"user_id": user_id, "status": "pending"},
+        {"_id": 0, "id": 1, "filename": 1, "xmp_content": 1},
+    ).to_list(5000)
+    return {"jobs": docs, "count": len(docs)}
+
+PLUGIN_DIR = Path("/app/lightroom-plugin/rawai_studio.lrplugin")
+
+@api_router.get("/lr/plugin-download")
+async def lr_plugin_download():
+    if not PLUGIN_DIR.is_dir():
+        raise HTTPException(status_code=404, detail="Plugin no disponible")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(PLUGIN_DIR.rglob("*")):
+            if path.is_file():
+                arc = Path("rawai_studio.lrplugin") / path.relative_to(PLUGIN_DIR)
+                zf.write(path, arcname=str(arc))
+        readme = PLUGIN_DIR.parent / "INSTALAR.txt"
+        if readme.is_file():
+            zf.write(readme, arcname="INSTALAR.txt")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="rawai_studio_plugin.zip"'})
+
+
+@api_router.post("/lr/complete")
+async def lr_complete(body: LrCompleteBody, request: Request):
+    user_id = await _user_from_lr_token(request)
+    if body.ids:
+        await db.lr_jobs.update_many(
+            {"user_id": user_id, "id": {"$in": body.ids}},
+            {"$set": {"status": "done", "done_at": datetime.now(timezone.utc).isoformat()}},
+        )
+    return {"ok": True, "completed": len(body.ids)}
+
+
+
 # ----------------------------- Project routes -----------------------------
 @api_router.get("/projects", response_model=List[Project])
 async def list_projects(user: User = Depends(get_current_user)):

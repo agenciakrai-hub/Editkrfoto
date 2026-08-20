@@ -1,317 +1,41 @@
 # RAW AI Studio — PRD
 
 ## Problema original
-Recrear "RAW AI Studio": app de selección y edición IA de bodas. Del proyecto al ZIP final:
-importar carpeta RAW, IA agrupa ráfagas y marca mejores tomas, revisión, perfil de cámara,
-presets/correcciones IA, procesamiento local y descarga de XMP. Los RAW nunca se modifican.
-
-## Elecciones del usuario
-- Alcance: MVP funcional del flujo principal.
-- Selección IA: heurística inteligente (elección del agente).
-- XMP: archivos sidecar reales descargables en ZIP.
-- Auth: Google login (Emergent-managed Google Auth).
-- Procesamiento: solo local (sin nube).
+App web local-first para culling y edición de fotografía RAW (fotógrafos de bodas).
+Motor de IA ajusta básicas (exposición, contraste, blancos…), aplica presets creativos
+y perfiles de cámara Adobe. Genera XMP seguros y sincroniza con Lightroom Classic
+mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
 
 ## Stack
-React 19 + FastAPI + MongoDB. Tema oscuro pro (bg #101012, paneles #141418, acento emerald #34D399).
-Fuentes: Outfit (títulos), Inter (cuerpo), JetBrains Mono. sonner para toasts, JSZip/file-saver descarga.
+- Frontend: React SPA. Módulos puros en `src/lib/rawaistudio/` (151 tests, 41 snapshots estrictos).
+- Backend: FastAPI (`server.py`) + MongoDB.
+- Auth: Emergent-managed Google Auth (session-based).
+- LLM: OpenAI vía Emergent LLM Key.
+- Plugin Lightroom: Lua (`/app/lightroom-plugin/rawai_studio.lrplugin/`).
 
-## Implementado (2026-08-13)
-- Auth Emergent Google (cookie session_token httpOnly + Bearer fallback): /api/auth/session, /me, /logout.
-- Proyectos CRUD por usuario: crear/listar/ver/actualizar/eliminar + PATCH /state (deep-merge de rawai_state).
-- Generación XMP real: POST /api/projects/{id}/generate-xmp -> ZIP con un .xmp (atributos crs:) por foto + LEEME.txt.
-- Frontend: Login, Dashboard (crear/abrir/eliminar proyectos), Studio stepper de 6 pasos:
-  Carpeta RAW -> Selección IA (burst grouping + best-shot) -> Revisión -> Perfil cámara -> Presets/params IA -> Procesamiento -> Reporte + descarga ZIP.
-- Heurística de selección: agrupa por proximidad temporal (lastModified), scoring determinista, marca mejor toma de cada ráfaga.
+## Implementado (jun 2026)
+- Limpieza de wrappers de presets → XMP aplican básicas en DNG.
+- Etiqueta color i18n (Label="Verde") para LrC español.
+- Inyección exacta de crs:Look con UUIDs Adobe (Color, Landscape, Vivid, Portrait, Mono).
+- Motor IA: protección de sujeto (contención de Blancos/Contraste con rostros detectados).
+- UI: panel de verificación XMP + auditoría IA por foto.
+- UI: concurrencia + toast de progreso para 500+ fotos.
+- Exportación: ZIP fragmentado (~300MB) + opción "Solo XMP (ligero)".
+- Eliminación total de código legacy Base44/localhost.
+- **Plugin nativo Lightroom (jun 2026) — COMPLETO Y PROBADO E2E**:
+  - Backend: `/api/lr/token`, `/api/lr/token/rotate`, `/api/lr/push`, `/api/lr/pending`,
+    `/api/lr/complete`, y `/api/lr/plugin-download` (empaqueta la carpeta .lrplugin + INSTALAR.txt como zip).
+  - Frontend `LightroomPlugin.jsx`: botón Enviar a Lightroom + token + descarga del plugin (URL corregida a `/api/lr/plugin-download`).
+  - Lua: Info/Settings/Sync/json + INSTALAR.txt con instrucciones.
+  - Sync jobs persistidos en MongoDB (`db.lr_jobs`), no en memoria.
 
-### Iteración 2 (2026-08-13)
-- Miniaturas reales: extracción del JPEG embebido en el RAW (lib/rawThumb.js) con carga perezosa (IntersectionObserver) en Revisión.
-- Perfiles de estilo propios: subir .xmp (parseo crs -> config) y guardar/cargar/eliminar perfiles reutilizables (/api/style-profiles).
-- Procesamiento en la nube: /api/projects/{id}/cloud-jobs (cola asíncrona queued->processing->completed), página /processing con polling + descarga ZIP.
-- Reanudar selección por nombre de archivo al reabrir proyecto tras re-elegir carpeta.
+## Backlog
+- P2: Análisis diferido — mover fotometría pesada al paso de Procesamiento (no en Revisión).
+- P3: Seguridad diferida por orden del usuario — SSRF en análisis de URLs (server.py ~1212+),
+  DoS por falta de límites en generación de ZIP.
+- P4: Perfiles "Adobe Neutro" y "Adaptables" (requiere XMP del usuario para extraer UUIDs).
 
-### Iteración 3 (2026-08-13)
-- KR Auto Nivelado (herramienta principal, 100% cliente con JSZip): nivelado técnico fijo de sidecars XMP (Exposición +0.10, Luces −15, Sombras +15, Blancos +5, Negros −5), preserva nombres y el resto del archivo. lib/xmp/krAutoLevel.js + componente KrAutoNivelado.jsx con vista previa y ZIP descargable.
-- Estilos desde galería (PhotographerStyleProfile): analiza la URL pública de otro fotógrafo con visión (GPT-5.4 vía Universal Key), scraping HTML + 12 imágenes, devuelve color_profile + edit_profile + descripción + confianza. /api/photographer-styles CRUD + análisis en background. Seleccionable como estilo de referencia en Presets.
-- Testing: backend 22/22 pytest OK (auth, scoping cross-user, cloud jobs, XMP, photographer styles happy/fail path).
-
-### Iteración 4 (2026-08-13)
-- Aplicar estilo detectado: el análisis devuelve `suggested_parameters` (valores numéricos crs) que se aplican a los parámetros del revelado al seleccionar el estilo.
-- Miniaturas de galería: se guardan y muestran varias imágenes de referencia (`gallery_images`), no solo una.
-- Nivelado ajustable: KR Auto Nivelado permite afinar los 5 deltas (sliders) con vista previa en vivo antes de generar el ZIP.
-- Reanudar nube: reaper en @startup marca como `failed` los cloud_jobs (queued/processing) y photographer_styles (analyzing) que quedaron colgados tras un reinicio.
-- Testing: backend 23/23 pytest OK (regresión + reaper + shape), sin bugs.
-
-### Fix (2026-08-13): selección solo 90 de 1000
-- Causa: al copiar 1000 fotos desde tarjeta/descarga, `lastModified` colapsa a valores casi idénticos → el agrupado por tiempo las encadenaba en pocas ráfagas gigantes → 1 seleccionada por ráfaga.
-- Solución: la selección IA se calcula ahora en el backend (POST /api/selection/analyze), testeable. Detecta si los timestamps son fiables (únicos/total > 0.5); si NO lo son, cada foto es su propia ráfaga y se selecciona todo; si lo son, agrupa ráfagas rápidas (<1500ms) con tope de 8 fotos y elige la mejor de cada una.
-- Verificado: 1000 timestamps idénticos → 1000 seleccionadas; 1000 realistas → 583. Testing 30/30 OK.
-
-### Iteración 6 (2026-08-13)
-- Modelo de edición actualizado: **ajustes básicos (luz/tono + balance de blancos) siempre automáticos por IA**; presets y estilos solo aplican la **capa creativa** (claridad, vibración, saturación) y NUNCA tocan lo básico. `AUTO_BASIC_PARAMS` se inyecta siempre en el XMP; `pickCreative`/`creativeParametersFromConfig`/`fullParametersFromConfig` en lib/paramDefs.js. Panel de Presets separa "Ajustes básicos — automático" (bloqueado) de "Ajustes creativos".
-- Antes/Después: previsualización simulada con filtros CSS derivados de los parámetros (slider comparador). BeforeAfterPreview.jsx.
-- Comparar estilos: dos galerías lado a lado con tabla de diferencias color/edición + confianza (selects). En PhotographerStyles.
-- Exportar perfil: descarga un estilo detectado como `.xmp` listo para Lightroom (buildStyleXmp).
-- Verificado: compilación limpia + XMP end-to-end (base auto + creativa con atributos crs correctos). Flujos UI internos dependen del selector de carpeta (no automatizable headless).
-
-### Iteración 7 (2026-08-13): selección precisa + motor optimizado 5000 fotos
-- Selección por CONTENIDO real (antes era un hash aleatorio del nombre): nitidez (varianza del laplaciano) + exposición (histograma) + perceptual hash (average-hash 8x8) para agrupar por similitud visual. Elige la más nítida/mejor expuesta de cada secuencia; si hay empate (≥92% de la mejor) selecciona más de una; nunca descarta fotos sin métrica. Lógica pura en `src/lib/selectionLogic.js` (6 tests jest).
-- Motor optimizado para miles de fotos: `extractPreviewBlob` lee SOLO los primeros 4MB del RAW con `file.slice` (no carga el archivo entero) para sacar la miniatura JPEG incrustada; cola con concurrencia limitada (mapLimit) + barra de progreso en SelectionStep.
-- Salida final EXCLUSIVAMENTE `.xmp`: `build_zip` genera un ZIP solo con los sidecars .xmp (sin LEEME) para descargar y pegar en la carpeta raíz.
-- Verificado: jest 6/6 (motor selección) + backend 31/31 (regresión + ZIP xmp-only). Sin bugs.
-
-### Iteración 8 (2026-08-13): corrección por foto + preset completo
-- Bug "misma corrección de luz a todas": ahora la corrección básica (exposición/luces/sombras/blancos/negros) se calcula AUTOMÁTICAMENTE POR FOTO desde su luma+recorte medidos (`autoBasicFromMetrics`) y se envía por foto. Cada XMP tiene su propia exposición.
-- Bug "el preset de Lightroom no se aplica": el preset .xmp subido se conserva COMPLETO (curvas, HSL, textura, split toning…). El backend solo sustituye los atributos básicos por la corrección per-foto de la IA (`build_photo_xmp` + `_set_crs_attr`); el resto del look pasa intacto.
-- Nuevo payload per-foto: `{photos:[{filename,basic}], creative_params, preset_xmp}` (con compatibilidad al formato antiguo). Cloud jobs también.
-- Verificado: jest 9/9 + backend 36/36. DARK.xmp Exposure +0.85 vs BRIGHT.xmp −0.60; Clarity/Vibrance/Texture del preset preservados. Sin bugs.
-
-### Iteración 9 (2026-08-13): precisión del auto-tono básico
-- La corrección básica por foto pasó de una fórmula simple (exposición por luma media) a un AUTO-TONO real basado en el HISTOGRAMA (`autoToneFromHistogram`): percentiles 0.5/50/99.5 para fijar exposición al tono medio objetivo, blancos/negros hasta casi tocar los extremos sin recortar, y recuperación de altas luces/sombras según el recorte medido. Calculado por foto en el análisis (metrics.basic).
-- Verificado: jest 10/10 (auto-tono oscuro→+EV, claro→−EV, recuperación de luces/sombras) + backend 36/36 (per-foto llega al XMP). Sin bugs de código.
-
-### Iteración 10 (2026-08-13): Extractor de perfiles desde URL (módulo aditivo)
-- Módulo independiente (no toca motor ni flujos existentes). Colección `extracted_profiles` + endpoints `/api/profile-extractor/{analyze,save,profiles,{id}}`.
-- Extrae perfiles (.xmp/.dcp/.lrtemplate) de un archivo directo o de una página con enlaces; estructura normalizada; dedup por manufacturer+camera_model+name; compatibilidad LR (yes/documented/unknown).
-- Seguridad SSRF: bloquea localhost/privadas/link-local/reservadas/metadata + esquemas no http; límites de tamaño/enlaces/tiempo; revalida tras redirección; sin ejecución de código.
-- UI: página `/profiles` (enlace "Perfiles" en la barra) con URL, Analizar, tabla de resultados y catálogo guardado.
-- Verificado: 27 casos backend + E2E frontend PASS. Sin bugs.
-
-### Iteración 12 (2026-08-16): Portado desde app de referencia — Biblioteca de Estilos + RAW AI Learning
-- Navegación ampliada (AppShell): barra con Proyectos / Estilos / Aprendizaje / Perfiles + resaltado de página activa.
-- **Biblioteca de Estilos** (página dedicada `/styles`): hub central que reutiliza el componente PhotographerStyles para crear/analizar/gestionar estilos de galería fuera del wizard.
-- **RAW AI Learning** (`/learning`, "Aprende de mis correcciones"): sube tus .xmp editados a mano → parseo cliente (parseXmp) → `POST /api/learning/analyze` agrega medias por clave (básicos + creativos) con stats{mean,min,max,count} y resumen en español. Guardar/activar/eliminar perfiles personales: `personal_profiles` + endpoints GET/POST/PATCH(activate)/DELETE `/api/learning/profiles`. Primer perfil se activa solo; activación exclusiva por usuario; scoping por user_id.
-- Dashboard: tarjetas de proyecto con barra de progreso + "X fotografías · estado" (etiqueta localizada).
-- NOTA: aplicar el perfil personal aprendido al motor de auto-tono queda como P2 (tarea futura); por ahora el módulo es aditivo y no toca el motor existente.
-- Verificado: testing_agent iteración 12 — backend 18/18 pytest OK (CRUD + scoping cross-user + regresión), frontend 100% flujos críticos (nav, /styles, /learning upload→analyze→save→activate→delete, tarjeta dashboard). Sin bugs.
-
-### Iteración 13 (2026-08-16): Motor de ajustes básicos v2 (dos capas, sin IA/coste) + Laboratorio de comparación
-- Nuevo motor determinista en `src/lib/rawaistudio/`:
-  - `photometricAnalysis.js` (capa técnica): percentiles p1/p5/p50/p95/p99, clipping luces/sombras, **medición ponderada al centro** (fotómetro real, prioriza al sujeto) y **clasificación de escena sin IA** (high_key / low_key / backlit / flash / normal) derivada de la fotometría.
-  - `exposureEngine.js` (capa de revelado): traduce fotometría → básicos (exposure/contrast/highlights/shadows/whites/blacks) con **modos de precisión con topes reales**: Conservador ±0.35EV/±20, Equilibrado ±0.6EV/±35 (default), Agresivo ±1.0EV/±55, con banda de mediana objetivo por modo. Ajustes contextuales por escena (contraluz abre sombras, clave alta protege luces, flash/clave baja preservan intención).
-- Página **Laboratorio del motor** (`/engine-lab`, nav "Motor", beta): elige carpeta → muestra de 24 fotos → compara valor **antiguo (`autoToneFromHistogram`) vs nuevo v2** por foto, con conmutador de modo en vivo y etiqueta de escena. 100% local, los RAW no se modifican. El motor actual NO se ha sustituido todavía (a validar por el usuario antes de reemplazar).
-- Nav ampliada: Proyectos · Estilos · Aprendizaje · Motor · Perfiles (+ menú móvil en el avatar).
-- Verificado: jest 8/8 del nuevo motor (oscura→+EV, clara→−EV, topes por modo, contraluz→+sombras, clave alta no sobreexpone, degenerados no rompen). Compila y renderiza OK.
-- PENDIENTE (tras validación): sustituir `autoToneFromHistogram` por el motor v2 en el flujo del estudio y cloud, y aplicar el modo de precisión elegido por foto.
-
-### Iteración 14 (2026-08-16): Motor v2 CONECTADO al flujo real
-- `imageAnalysis.metricsFromBitmap` ahora calcula `photometrics` por foto (histograma global + ponderado al centro) durante la selección; se adjunta a cada foto en `SelectionStep`.
-- `Studio.buildPayload` calcula los básicos por foto con `computeBasic(photometrics, mode)` (motor v2) aplicando el **modo de precisión elegido**; fallback a base técnica si no hay fotometría (selección restaurada). Vale para local y nube.
-- `PRECISION_MODES` ahora son reales: Conservador / Equilibrado (default) / Agresivo, con topes ±EV efectivos.
-- Backend sin cambios (ya mapea `contrast`→Contrast2012). Verificado end-to-end: 2 fotos → XMP distintos (DARK +0.60 EV / BRIGHT −0.44 EV) con contraste y capa creativa correctos. jest 18/18 OK.
-- El auto-tono antiguo (`autoToneFromHistogram`) se conserva como fallback y para el laboratorio de comparación.
-
-### Iteración 15 (2026-08-16): Capa de caras (Fase 1) — selección IA con detección de personas
-- Librería **@vladmandic/face-api** (local, gratis, sin nube). Modelos TinyFaceDetector servidos desde `/public/models` (verificado 200 en preview; detección real confirmada: 4 caras en foto de grupo).
-- `faceLogic.js` (puro, testeado): `facesChanged(a,b)` → mismo nº de caras y sin desplazamientos >6% del encuadre = misma toma; si cambian = **foto distinta**. jest 5/5.
-- `faceEngine.js` (capa extra, NO toca el motor de selección): `loadFaceModels` (inicializa backend tfjs webgl→fallback), `detectFacesFromUrl`, `applyFaceLayer`.
-- `applyFaceLayer` corre **solo sobre ráfagas (>1) y fotos ya seleccionadas** (rápido). Añade por foto: `faceCount`, `isGroup` (≥3), `noPeople`, y afina ráfagas: **rescata** hermanas cuya configuración de caras cambió (`faceDistinct`, se marcan como seleccionadas) y marca **`doubt`** cuando hay varias tomas iguales sin ganadora clara.
-- UI: `SelectionStep` muestra 2ª fase "Analizando caras…" + resumen (grupo / rescatadas / dudas). `ReviewStep` muestra badges por foto: nº personas / grupo / sin personas, **⚠ Dudas**, **Cara distinta**, con leyenda.
-- Garantía: el motor solo AÑADE selecciones (nunca quita) → **mínimo 1 foto por ráfaga** siempre. Si los modelos fallan, el flujo continúa sin caras (no bloquea).
-- PENDIENTE Fase 2: filtros (grupo / sin personas / protagonistas), agrupado automático de caras (clustering con face_recognition) + etiquetado por el usuario (novia/novio/invitados).
-- NOTA: el flujo completo en el estudio requiere subir una carpeta de RAW real (no automatizable en headless); validado por partes (detección e2e + tests + compilación). Pendiente validación del usuario con fotos reales.
-
-### Iteración 16 (2026-08-16): Fase 2 — reconocimiento de caras (protagonistas) + filtros
-- Modelos añadidos y servidos localmente: `face_landmark_68` + `face_recognition` (además de tiny_face_detector). `loadFaceModels` carga los 3.
-- `detectFacesFromUrl(url, withDescriptors)` → descriptores 128-d por cara (verificado en navegador: 4 caras, len 128, distancias 0.63–0.77 = personas distintas).
-- `faceLogic.js` (puro, testeado): `euclidean` + `clusterFaces` (clustering voraz por centroide, umbral 0.55). jest 8/8 en faceLogic.
-- `applyFaceLayer` ahora agrupa personas por reconocimiento, asigna `p.people=[clusterId]`, y devuelve `people` (top 12 protagonistas con recorte 96x96 `thumb` + nº de fotos).
-- UI `ReviewStep` reescrito con: barra de **filtros** (Todas / Con personas / Grupos / Sin personas) + **panel de protagonistas** (avatar recortado, nombre editable —novia/novio/invitados—, contador, clic para filtrar por persona). `SelectionStep` muestra "N personas".
-- Threading: `SelectionStep.onContinue(photos, people)` → `Studio` guarda `people` → `ReviewStep`.
-- Todo local y gratis. No toca el motor de selección ni el de ajustes básicos. Compila; jet total 26/26.
-- NOTA: flujo completo requiere carpeta RAW real (no automatizable en headless); verificado por partes (reconocimiento e2e + tests + compilación). Pendiente validación del usuario. Etiquetas de personas son de sesión (no persistidas aún).
-
-### Iteración 17 (2026-08-16): Herramienta "Auto básicos → XMP" (independiente, 100% local)
-- Nueva página `/auto-basic` (nav "Auto XMP"): importa carpeta → el motor v2 analiza TODAS las fotos → calcula los 6 básicos por foto (modo de precisión elegido) → exporta ZIP de .xmp con jszip en el navegador (sin backend, sin coste).
-- Sin ráfagas, sin selección, sin presets/estilos: SOLO ajustes básicos (los creativos no se incluyen).
-- Reutiliza `analyzeFile` (fotometría), `computeBasic` (exposureEngine v2), `buildStyleXmp` (cliente) y file-saver. Fallback a AUTO_BASIC_PARAMS si una foto no da fotometría.
-- Cambiar de modo tras analizar recalcula al instante (no reanaliza). Perfil de cámara configurable (def. Adobe Standard).
-- Verificado: página renderiza (nav, picker, modos, perfil) + test de XMP (incluye los 6 básicos, excluye Clarity/Vibrance/Saturation, formato exposición +0.00). jet total: pasa.
-- NOTA: análisis de carpeta real no automatizable en headless; validado por partes.
-
-### Iteración 18 (2026-08-16): Revisión de código — correcciones seguras
-- `server.py analyze_url`: inicializado `profiles = []` antes del if/elif/else (defensivo; el hallazgo "undefined" era falso positivo pero se blinda).
-- `Studio.jsx persist`: `console.warn` ahora solo en desarrollo (`NODE_ENV === 'development'`).
-- REVISADO y NO cambiado (falsos positivos): los `is None`/`is not None` del backend (líneas 188/293/411/790/859) son el idioma CORRECTO de Python; cambiarlos a `==` sería un anti-patrón. Catch "vacíos" en LearningModule/faceEngine son *skips* intencionados y ya llevan comentario + fallback.
-- DIFERIDO (riesgo de regresión sobre código probado, ya anotado en handoff): refactor de complejidad de componentes (ReviewStep/PhotographerStyles/PresetParamsStep/SelectionStep) y `_parse_profile`/`analyze_photographer_style`; y los cambios masivos de dependencias de hooks (efectos de montaje intencionados).
-
-### Iteración 19 (2026-08-16): Aplicadas correcciones de la revisión de código
-- Hooks: añadido `eslint-disable-next-line react-hooks/exhaustive-deps` con motivo a los efectos de montaje intencionados (Dashboard, ProfileExtractor, LearningModule, PresetParamsStep, SelectionStep, Studio). AuthContext ya era correcto (useCallback/useMemo con deps válidas). Sin cambios de comportamiento.
-- LearningModule: `ALL_KEYS` hoisted a scope de módulo (evita recrear el array en cada render).
-- Backend: `_parse_profile` refactorizado en helpers `_parse_xmp_profile` / `_parse_lrtemplate_profile` (menos complejidad). Verificado idéntico en XMP/lrtemplate/dcp/fallback.
-- Frontend: `PhotographerStyles` descompuesto → `StyleComparePanel` (IIFE de comparación) + `StyleCard` (+ StatusPill). Renderiza OK.
-- Falsos positivos confirmados y NO tocados: `is None`/`is not None` (idioma correcto Python); catch intencionados con comentario.
-- PENDIENTE (opcional, refactor de complejidad en flujos entrelazados no auto-testeables sin subir RAW real): descomposición de `ReviewStep`/`SelectionStep`/`PresetParamsStep` y de `analyze_photographer_style`/`compute_selection`. Se dejan para una pasada dedicada con pruebas de regresión.
-
-### Iteración 20 (2026-08-16): Más refactors de complejidad (verificados en regresión)
-- `ReviewStep` → extrae `PhotoCard`. `SelectionStep` → extrae `SelectionProgress`. (Junto a StyleCard/StyleComparePanel de la iter. 19).
-- Regresión testing_agent (iteration_13.json): backend 21/21, frontend 6/6 rutas renderizan, sin issues, sin errores de consola, retest_needed=false. Comportamiento idéntico confirmado.
-- HECHO de la revisión de código: bug `profiles` (blindado), hooks (eslint-disable con motivo), `_parse_profile` (helpers), console.warn (dev-gate), ALL_KEYS (hoist), y complejidad de PhotographerStyles/ReviewStep/SelectionStep reducida.
-- PENDIENTE (Important, no crítico): `PresetParamsStep` y backend `analyze_photographer_style`/`compute_selection` — funciones con lógica/estado entrelazado; se dejan para una pasada dedicada con pruebas.
-
-### Iteración 21 (2026-08-17): Motor de selección IA — precisión (Parte 1)
-- **Auto-rotación EXIF** (`exif.js`): lee la orientación (JPEG/TIFF/CR3-CMT1) y la aplica en `rawThumb.extractThumb` (miniatura upright) y en `imageAnalysis.bitmapFromFile` (análisis upright). Arregla verticales de lado y el falso "Sin personas" (las caras giradas ya no se detectaban).
-- **Ojos y expresión**: `detectFacesFromUrl` ahora usa landmarks + expresiones + descriptor → por cara `ear` (ojos abiertos), `smile`, `area`. `photoFaceScore` (pure) penaliza ojos cerrados (peor caso del grupo), premia sonrisa y tamaño de sujeto. Modelo `face_expression` añadido a /models.
-- **Selección precisa por ráfaga**: re-ranking en `applyFaceLayer` = 55% base (nitidez/exposición) + 45% cara → elige SOLO la mejor. "Dudas" solo en empate real ≥98.5%. "Cara distinta" solo si las caras cambiaron de posición (>6% encuadre).
-- Verificado: EXIF reader (test), detección+ojos+expresión e2e en navegador (3 caras, EAR 0.26-0.30, happy, desc 128), `photoFaceScore`/EAR (tests). jet total 33+ OK. Flujo con RAW real: pendiente prueba del usuario.
-
-### Iteración 22 (2026-08-17): Selección final (finalSelection) + 5★/verde + visor
-- **Regla IA→Revisión→final**: `finalSelection` (en `rawai_state`) es la fuente de verdad. La IA solo propone (`source:"ai"`); cada cambio manual marca `source:"manual"` y persiste al instante (`Studio.persistFinal` + `ReviewStep.onChange`).
-- **Persistencia/restauración**: al reabrir, `FolderSelectStep` restaura `finalSelection` por nombre (manual prevalece); NO re-ejecuta la IA sobre lo ya decidido. Descartadas se conservan (pestaña "No seleccionadas").
-- **XMP**: `build_xmp` añade `xmp:Rating="5"` + `xmp:Label="Green"`; ruta preset usa `_set_xmp_meta` (inserta/actualiza esos 2 atributos y el namespace xmp SIN borrar Look/ToneCurve/HSL…). Verificado XML bien formado.
-- **Endpoint** `GET /api/projects/{id}/final-selection` → estructura para el plugin de Lightroom: `{filename, selected, source, rating, label}`.
-- **UI** `ReviewStep` reescrito: pestañas Seleccionadas(X)/No seleccionadas(X), tarjetas grandes con 5★+etiqueta verde+estado+IA/Manual+añadir/quitar. Nuevo `PhotoViewer` (grande, ←/→, estado, IA/manual, añadir/quitar, Esc).
-- No se tocó el motor de selección (puntuación/ráfagas/caras/ojos/sonrisa intactos).
-- NOTA: el panel de filtros por protagonista (iter.16) NO se muestra en la nueva revisión por pestañas (el reconocimiento sigue corriendo); se puede re-añadir si se desea. Flujo con RAW real: pendiente prueba del usuario.
-
-### Iteración 23 (2026-08-17): Auditoría de seguridad — correcciones (verificadas 17/17)
-- SSRF: `_assert_safe_url` aplicado en `scrape_gallery_images` y `download_images_b64` (bloquea IP internas/metadata). Verificado rechaza 169.254.169.254 / localhost / 127.0.0.1.
-- CORS: `CORS_ORIGINS` explícito (edit.krfoto.com + preview); `allow_credentials=False` si comodín. No refleja orígenes arbitrarios con credenciales.
-- XML: `_xesc` (incluye `&quot;`) en `build_xmp` (filename/camera_profile) y `_profile_to_xmp`; ruta preset con `_set_xmp_meta` sin borrar campos.
-- ZIP: nombres de entrada saneados a basename (sin path traversal).
-- `final-selection` blindado ante entradas no-dict. Testing_agent iteration_15: 100% (17/17), sin issues.
-
-### Iteración 24 (2026-08-17): Fix DNG — ajustes no visibles tras actualizar metadatos
-- Causa: Lightroom IGNORA los sidecar `.xmp` para DNG (los ajustes deben ir DENTRO del `.dng`).
-- Fix: `dngXmp.embedXmpInDng` inserta el XMP (básicos + `xmp:Rating=5` + `xmp:Label=Green`) dentro del DNG re-apuntando la etiqueta TIFF 700 (append seguro, sin reescritura in situ). CR3/otros mantienen sidecar `.xmp`.
-- Conectado en la herramienta **Auto XMP** (`/auto-basic`): DNG → `.dng` con XMP embebido; resto → `.xmp`.
-- Verificado: unit tests dngXmp 3/3 (tag 700 apunta al nuevo XMP con crs+rating+label; falla limpio si no es TIFF) + testing_agent frontend 6/6 rutas sin errores. Validación final en Lightroom: la hace el usuario.
-- PENDIENTE: conectar el embebido DNG también en el flujo de Studio (ReportStep, con presets) — hoy Studio genera ZIP en backend (sidecars); DNG en Studio requiere procesar el archivo en cliente. Compatible con el plugin vía `final-selection`.
-
-### Iteración 25 (2026-08-18): FASE 1 — Decisor ÚNICO de selección por secuencia (regla del usuario)
-- **Filosofía nueva (obligatoria)**: el motor es un asistente. De CADA secuencia selecciona SIEMPRE la mejor foto disponible y AVISA (warning) si tiene problemas. NUNCA deja una secuencia sin selección. Estados: SELECTED · SELECTED+WARNING · NOT_SELECTED.
-- **`burstDecision.js` reescrito** como decisor único `decideSequence(photos)` con flujo por etapas: técnica → sujetos/posiciones (identidad relativa sin biometría) → ojos (jerárquico, nunca inventa certeza: open/partial/closed/**unknown**) → comparación relativa → decisión.
-  - **Identidad relativa por secuencia** (`assignSubjects`): fotograma con más caras = layout de referencia; empareja sujetos por posición+tamaño (subject_1 izq / subject_2 centro / subject_3 der…). Evalúa CADA sujeto (ojos, parpadeo, nitidez facial, expresión, visibilidad, posición). Seguimiento incierto → `WARNING_SUBJECT_TRACKING_UNCERTAIN`, baja confianza, pero igual selecciona.
-  - **GARANTÍA ≥1 por secuencia**: cascada de pool no vacío (limpias → técnicamente válidas → todas) + `selected=true` marcado en la mejor ANTES de cualquier warning. Warnings solo AÑADEN avisos, nunca quitan selección. Test de invariante: 100 secuencias aleatorias (incl. degeneradas) = 100 con ≥1 seleccionada.
-  - **Taxonomía de warnings** (`WARNING` + `WARNING_LABELS`): CLOSED_EYES, PARTIAL_BLINK, LOW_SHARPNESS, EXPOSURE, FACE_OCCLUDED, MISSING_SUBJECT, MULTIPLE_FACE_ISSUES, NO_PERFECT_CANDIDATE, SUBJECT_TRACKING_UNCERTAIN, TIE. Empate real → máx 2 SELECTED+WARNING.
-  - **Auditoría por foto**: technicalScore, faceScore, eyesScore, expressionScore, sharpnessScore, exposureScore, selectionConfidence, subjects[], state, reason.
-- **`faceEngine.js`**: `applyFaceLayer` ya NO decide (eliminado `rankOf`); solo detecta y delega en el decisor único. `inputSize` del detector 320 → **512** (ojos precisos). Nueva **nitidez facial por cara** (`measureFaceSharpness`, varianza laplaciano sobre el recorte).
-- **UI**: SelectionStep relabel "con advertencia (revisar)"; ReviewStep con pestaña **"Con advertencia"**, badge ⚠ Revisar en tarjetas seleccionadas y chips con los tipos de warning.
-- Verificado: jest 34/34 (burstDecision 12 casos + faceLogic + selectionLogic). Compila. **PENDIENTE**: validación del usuario con carpeta de RAW reales (grupos con ojos abiertos/cerrados, parpadeos, sub/sobreexpuestas) antes de pasar a FASE 2.
-
-### Iteración 26 (2026-08-18): FASE 2 — Motor IA de ajustes básicos (13 params) + AISLAMIENTO estricto del preset
-- **Regla definitiva del usuario**: MOTOR IA = 13 básicos (Temperature, Tint, Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Texture, Clarity, Dehaze, Vibrance, Saturation) y NADA más. PRESET/ESTILO = resto del look y NUNCA los 13. Revierte la iteración 6 (clarity/vibrance/saturation vuelven al Motor IA).
-- **Nuevo motor** `src/lib/rawaistudio/basicEngine.js` → `computeAiBasics(analysis, {mode, wbStrength, deadzone})` devuelve `aiBasicAdjustments` (13) + auditoría (`editingConfidence`, `exposureClassification`, `subjectDetected`, `skinDetected`, `whiteBalanceConfidence`, `reasoningSummary`). Por foto, individual, con **zona muerta "no tocar"** (si no necesita → 0). Sin lift de sombras automático (−8 baseline eliminado). Presencia/color a 0 salvo que la fotometría lo justifique (nada de HDR).
-- **WB nuevo** `whiteBalance.js`: `temperature`/`tint` corrector alrededor de 5500K neutro; con personas usa la **piel** como referencia; sin corrección fiable → As Shot (temp/tint null, no impone Kelvin fijo). Suave/conservador por defecto.
-- **Captura de color** en `imageAnalysis.metricsFromBitmap`: R/G/B global + referencia de piel por cromaticidad (antes solo luma).
-- **AISLAMIENTO en backend** (`build_photo_xmp` reescrito): ante un preset, PRIMERO **elimina** del XMP los 13 básicos (+ WhiteBalance/IncrementalTemperature/Tint) con `_strip_crs_attrs`, LUEGO inyecta los 13 de la IA. `AI_BASIC_ATTR_MAP` (13, incl. Texture/Dehaze). `CRS_MAP` y `build_xmp` con Texture/Dehaze + WhiteBalance Custom/As Shot. Payload nuevo `ai_basics` por foto (compat `basic`).
-- **Wiring**: `Studio.buildPayload` y `AutoBasic` envían/usan `computeAiBasics`; `paramDefs` reclasifica los 13 como IA (CREATIVE_KEYS=[]); `xmp/buildXmp.js` (frontend) emite los 13.
-- **Verificado**: jest **62/62** (nuevos: whiteBalance 5, basicEngine 9 — oscura→+EV sin quemar, clara→−EV, ya-correcta→~0 en los 13, valores distintos por foto, sin fotometría→neutral, no-HDR, auditoría). **Prueba crítica de aislamiento** (backend, sección 20): preset con basura en los 13 → salida con EXACTAMENTE los 13 de la IA + look no-básico (ToneCurve/HSL) conservado. **E2E API real** confirmado (Exposure +2.00→+0.35, Temperature 9000→5200, Vibrance 90→8, ToneCurve intacta, WhiteBalance Custom).
-- **PENDIENTE**: (1) persistir la auditoría (`aiBasicAdjustments`/confidences/`reasoningSummary`) en `rawai_state` para revisión y plugin; (2) usar caras de la Fase 1 para refinar metering/piel del WB; (3) validación del usuario con RAW reales (correctas/sub/sobre/contraluz/interiores/piel/vestido blanco/ventanas).
-
-### Iteración 27 (2026-08-18): Herramienta de VALIDACIÓN Fase 1 (observabilidad, no toca el motor)
-- Nueva página `/validation` (nav "Validación"): corre el pipeline REAL de selección (`analyzeFile → groupAndSelect → applyFaceLayer`) sobre una carpeta y muestra el desglose por secuencia SIN modificar la lógica (capa de diagnóstico).
-- **Resumen global** con comprobación automática de la regla fundamental: secuencias procesables, con selección, SELECTED, SELECTED+WARNING, sin selección → banner **verde (CUMPLIDA)** o **rojo (ERROR — N secuencias sin selección + ids)**. Desglose de warnings por tipo.
-- **Por secuencia** (expandible): nº fotos, seleccionada + confidence, estado, warnings; **por foto**: estado, motivo, selectionConfidence, technical/face/eyes/expression/sharpness/exposure scores, nº caras y **sujetos** (posición relativa, principal, ojos open/closed/partial/unknown, nitidez facial, visibilidad, confianza). Miniatura real de la seleccionada.
-- **Filtros** rápidos (todas / con selección / con warning / por tipo de warning) y **Exportar JSON** del informe completo para diagnóstico offline.
-- `src/lib/validationReport.js` (puro) + tests 4/4 (regla cumplida, detección de incumplimiento, no-procesables excluidas, detalle de sujetos). jest total **66/66**.
-- USO: el usuario ejecuta una sesión RAW real, revisa el informe/exporta JSON y devuelve casos problemáticos para afinar el motor. Validación final RAW→XMP→Lightroom la hace el usuario.
-
-### Iteración 28 (2026-08-18): Chequeo de despliegue — CORS producción
-- Health check de despliegue: PASS (compilación, env-only URLs, supervisor, auth redirect, sin ops destructivas de DB).
-- Añadido el host de producción de Emergent a `CORS_ORIGINS` (`edit.krfoto.com` + `ai-xmp-gen.emergent.host` + preview). Se mantiene **lista explícita, NO `"*"`**: la auth usa cookies con credenciales y `allow_credentials = not wildcard`, por lo que `"*"` rompería el login. Verificado en runtime: backend responde `allow-origin: ai-xmp-gen.emergent.host` + `allow-credentials: true`.
-
-### Iteración 29 (2026-08-19): Perfiles de Lightroom + fusión de pasos Perfil+Estilo
-- **CameraProfileStep** rehecho: juego real de perfiles Adobe (Adobe Color [def], Estándar, Retrato, Paisaje, Vivos, Neutro, Adaptable Color, Monocromo, Adaptable B&N) con el nombre interno correcto para `crs:CameraProfile`. Sección **"Mis perfiles"**: añadir por nombre exacto (persistencia en localStorage `krfoto.customProfiles`, eliminables). Aviso: el sidecar solo referencia el perfil; debe existir en el Lightroom del usuario.
-- **Fusión de wizard**: los pasos "Perfil" (3) y "Presets IA" (4) se combinan en **un único paso "Perfil y estilo"** (`ProfilePresetStep`). Stepper pasa de 6 a 5 nodos. Flujo explicado en la UI: 1) perfil elegido → 2) IA aplica las 13 básicas por foto → 3) preset/estilo de color encima (opcional).
-- `CameraProfileStep` y `PresetParamsStep` ahora soportan modo `embedded` (ocultan su Continuar y notifican vía `onChange`); el preset es **opcional** (sin preset = perfil + básicas IA). `STEP_INDEX` actualizado.
-- Default de perfil: "Adobe Color". Compila limpio; verificación por compilación (el paso vive dentro del wizard, no accesible en headless).
-
-### Iteración 30 (2026-08-19): Motor de selección — agrupación estricta por cara + descarte por nitidez facial
-- **Agrupación más estricta** (`splitByMainFace` en burstDecision.js, puro): tras detectar caras, cada ráfaga se ordena temporalmente y se DIVIDE en secuencias separadas si la cara PRINCIPAL cambia de posición (>0.14), tamaño (>1.4×), inclinación/roll (>12°) o giro/yaw (>0.18), o si aparece/desaparece la persona. `faceEngine.detectFacesFromUrl` ahora calcula `pose {roll, yaw}` desde landmarks. Los burstId se renumeran tras la división.
-- **Descarte por trepidación = nitidez FACIAL del sujeto principal** (no de la imagen completa): `sharpnessScore` de fotos con personas = nitidez de la cara principal; `techValid` para personas exige nitidez facial ≥ max(0.12, 0.72×mejor de la secuencia) → una toma trepidada pierde frente a la MISMA persona más nítida. `subjectScore` rebalanceado para priorizar OJOS ABIERTOS (0.5) + NITIDEZ FACIAL (0.35).
-- Se mantiene: 1 seleccionada por secuencia salvo empate real (máx 2), garantía ≥1 por secuencia, inputSize 512.
-- Verificado: jest **71/71** (nuevos: descarte por cara borrosa, split por posición/ángulo/presencia). La herramienta Validación refleja todo (mismo pipeline). Validación con RAW reales → usuario.
-
-### Iteración 31 (2026-08-19): Simplificación del paso "Perfil y estilo"
-- `PresetParamsStep` reescrito y simplificado a 3 módulos independientes: (1) perfil de cámara [arriba], (2) básicas automáticas por IA — panel de los 13 en "Auto" (solo aceptación) + intensidad de corrección (Conservador/Equilibrado/Agresivo), (3) preset/estilo de color: subir .xmp, **guardar** (localStorage `krfoto.presets`), seleccionar/eliminar, u opción "Sin preset".
-- Eliminado del paso: KR Auto Nivelado embebido, galería PhotographerStyles, estilos fijos STYLE_PRESETS (no producían XMP), sliders creativos y Antes/Después. El preset NUNCA toca los 13 (aislamiento en backend intacto).
-- El XMP final ya registra todo de forma independiente: 13 básicas IA + look del preset + 5★ y etiqueta verde de la selección (`_set_xmp_meta`).
-- Compila limpio; jest 71/71 sin cambios (componente presentacional + localStorage).
-
-### Iteración 32 (2026-08-19): Fix — básicos IA vacíos al reanudar selección
-- Bug: al reanudar una selección guardada (`analyzeFolder`, sin análisis de píxeles) las fotos no tenían `photometrics`/`color`, así que `computeAiBasics` devolvía neutro → los 13 básicos salían en 0 en el XMP (el preset sí se aplicaba). 
-- Fix: `ensureMetrics(queue)` en el continue de Revisión re-analiza (`analyzeFile`) las fotos seleccionadas que no tengan fotometría/color antes de construir el payload → básicos IA reales por foto. Cubre flujo nuevo y reanudado.
-
-### Iteración 33 (2026-08-19): Fix — DNG no recibía las básicas IA (solo el preset)
-- Causa: el Studio generaba solo sidecars `.xmp`; Lightroom IGNORA el sidecar en DNG y lee la metadata embebida del propio archivo (que ya traía el preset), por eso el DNG mostraba preset pero no las básicas nuevas.
-- Fix: `ReportStep.download` ahora, tras recibir el ZIP de sidecars del backend (XMP correcto con básicas+preset+5★/verde y aislamiento), **incrusta ese XMP DENTRO de cada .dng** (`embedXmpInDng`, re-apunta el TAG 700 de IFD0). CR3/otros siguen como sidecar. Se pasan los `File` a ReportStep vía `files={sendPhotos}`.
-- ZIP resultante: `.dng` con ajustes incrustados + `.xmp` para el resto. jest 71/71, compila.
-
-### Iteración 34 (2026-08-19): Fix Shadows (fuente única) + Fase A1 (metering híbrido con caras)
-- Shadows: eliminadas las compensaciones ocultas (`+8` en exposureEngine L46 y `-8` en basicEngine). Fuente única. Único cambio de regresión aprobado: `backlit·conservative` 12→20 (intencional).
-- A1: nuevo `hybridMetering.js` (`computeMeter`): combina cP50 con la luminancia del SUJETO (caras Fase 1) con peso DINÁMICO acotado (WMAX=0.6) según tamaño/confianza/nitidez/frontalidad; cara principal por prioridad (no faceCount). `computeBasic` acepta `meterOverride`; `computeAiBasics` lo calcula desde `analysis.faces`. Sin caras → cP50 (NO CHANGE, regresión intacta). Añadida `luma` facial en `detectFacesFromUrl`. Protección vestido blanco (p99≥250, solo ruta con caras). Studio pasa `faces`. Auditoría `metering`/`facesDetected`.
-- Tests: 125/125 (13 A1 boda + 41 regresión sin cambios salvo el aprobado); aislamiento verde.
-
-### Iteración 35 (2026-08-20): Fix P0 — el DNG mostraba el preset pero NO las básicas de la IA
-- **Causa raíz**: el `.xmp` que sube el usuario es un **PRESET-TEMPLATE de Lightroom** (`crs:PresetType="Normal"`, `crs:ShowInPresets`, `crs:UUID`, `crs:Supports*`, bloques `crs:Name`/`crs:Group`, máscaras). El backend inyectaba bien las 13 básicas de la IA, pero conservaba esa envoltura de preset. Al incrustarse en el DNG, Lightroom interpretaba el XMP como una *definición de preset* (no como *ajustes aplicados a la foto*) → aplicaba el look creativo/máscaras pero **ignoraba los básicos globales**. Solo se notaba en DNG porque ahí Lightroom lee el XMP embebido (los sidecars .xmp se ignoran en DNG). Confirmado con el preset real del usuario (`1.xmp`) y su salida (`KRFC2606.xmp`).
-- **Fix** (`server.py`, backend, quirúrgico): nueva `PRESET_WRAPPER_NAMES` + segunda pasada de `_strip_crs_attrs` en `build_photo_xmp` que **convierte el preset-template en ajustes aplicados**: elimina PresetType/UUID/Cluster/PresetSubtype/Supports*/RequiresRGBTables/ShowInPresets/ShowInQuickActions/CameraModelRestriction y los bloques Name/ShortName/SortName/Group/Description. Conserva TODO el look (curvas, HSL, split toning, color grading, máscaras, sharpening) + las 13 básicas de la IA + `HasSettings="True"` + 5★/verde.
-- **NO se tocó**: A1/A2, motor de IA, embedXmpInDng, ni los snapshots de regresión.
-- **Verificado**: pytest aislamiento 6/6 (nuevo test `test_preset_template_converted_to_applied_settings` con estructura real de preset). Salida contra el preset real del usuario: envoltura eliminada, `Highlights2012=-35`/`Blacks2012=-13` aplicados, look conservado, XML bien formado. Backend 200. Validación final RAW→DNG→Lightroom la hace el usuario.
-
-### Iteración 36 (2026-08-20): Verificación de exportación en la app (sin Lightroom)
-- Nuevo módulo puro `lib/xmp/verifyXmp.js` (`verifyXmp(xmp)`): detecta básicas de la IA aplicadas (13, con conteo de activas ≠0), presencia del look del preset (curva/HSL/split toning/color grading/máscaras/sharpening), si sigue siendo **preset-template** (`PresetType`/`UUID`/`ShowInPresets`/`SupportsAmount` → ⚠ no aplicado) y 5★+Verde.
-- `dngXmp.readXmpFromDng(bytes)`: lee de vuelta el paquete XMP incrustado (tag 700 de IFD0) del **propio .dng generado** (verificación real, no del sidecar del backend).
-- `ReportStep`: tras descargar el ZIP, construye un informe por archivo (DNG lee del .dng embebido; CR3 del sidecar) y muestra `VerificationPanel` (`components/studio/VerificationPanel.jsx`): resumen `N/M ok` + fila por foto con badges (Básicas IA · N activas / Look preset / Ajustes aplicados vs preset-template / 5★+Verde) y detalle expandible con los 13 valores + balance de blancos.
-- Verificado: jest 4/4 (`verifyXmp.test.js`: aplicado ok, preset-template marcado no-ok, vacío no-ok, round-trip embed→readXmpFromDng→verify). Compila limpio. Panel visible solo tras descargar (flujo con RAW real lo valida el usuario).
-
-### Iteración 37 (2026-08-20): Ajuste Fino IA (ambiente por color) + WB por piel facial (A2)
-- **Regla de oro**: cambios ADITIVOS y activados solo con señal nueva → los 41 snapshots de regresión siguen EXACTAMENTE igual (verificado).
-- **Ajuste Fino IA (contexto por color)**: nuevo `lib/rawaistudio/sceneContext.js` (`classifyAmbience(color, pm)` → golden_hour / tungsten / cool / neutral desde la dominante cromática). `imageAnalysis` lo calcula y lo adjunta a `photometrics.ambience`. En `exposureEngine`, golden_hour NO aclara de más (preserva el mood). En `whiteBalance`, golden hour/tungsteno **preservan la calidez** (no neutralizan del todo: conserva 70%/40%).
-- **WB por piel facial (A2)**: `faceEngine.measureFaceSharpness` ahora también muestrea la **piel** de la zona central del recorte de cada cara → `face.skin {r,g,b,count}`. `basicEngine.aggregateFaceSkin` pondera por tamaño/nº de muestras y pasa `faceSkin` a `computeWhiteBalance`, que aplica la jerarquía **piel facial → piel agregada → gris-mundo → As Shot** (`skinSource` en auditoría). Sin caras → ruta anterior intacta.
-- **Auditoría**: `computeAiBasics` expone `wbSource` y `ambience`.
-- **Verificado**: jest 146/146 (10 nuevos en `sceneContext.test.js`: ambiente, preservación de calidez golden/tungsteno, prioridad de piel facial, integración con caras) + 41 snapshots sin cambios.
-
-### Iteración 38 (2026-08-20): Alerta en Verificación + Antes/Después (aprox. visual)
-- **Alerta**: `VerificationPanel` marca en ROJO y muestra un banner con los archivos que salieron sin básicas o como preset-template, con botón **"Reintentar exportación"** (relanza la generación del ZIP). Fila en rojo si `verify.ok=false`.
-- **Antes/Después**: nuevo `lib/xmp/previewFilter.js` (`cssFilterFromBasics` traduce los 13 básicos a un filtro CSS: brillo/contraste/saturación/sepia/hue) + `components/studio/BeforeAfterMini.jsx` (carga perezosa de la miniatura real con `extractThumb`, muestra original vs filtrado). Toggle "Antes/Después" por fila. Es una **aproximación orientativa**, no el revelado real del RAW.
-- `ReportStep` adjunta el `File` a cada item del informe y pasa `onRetry`/`retrying` al panel.
-- **Verificado**: jest 146/146 (7 nuevos en `previewFilter.test.js`) + compila limpio. Flujo visible tras descargar en el paso de reporte (validación con RAW real la hace el usuario).
-
-### Iteración 41 (2026-06): Fix P0 — perfil de cámara seleccionado no se aplicaba (salía Adobe Estándar)
-- **Causa raíz doble**: (a) la iteración 35 borraba `crs:UUID`/`Name`/`Group` de forma GLOBAL, corrompiendo el `<crs:Look>` embebido del preset → Lightroom caía a Adobe Estándar; (b) la ruta con preset nunca inyectaba el perfil seleccionado.
-- **Fix (`server.py`)**: `_remove_profile` (quita Look/CameraProfile del preset) + `_apply_profile` (inyecta el seleccionado: `crs:Look` por UUID para Adobe, o `crs:CameraProfile` para Standard/custom) + `_set_crs_str_attr`/`_insert_before_desc_close`. La limpieza de envoltura se hace ANTES de inyectar el Look. `build_xmp` (sin preset) también corregido.
-- **Tabla `ADOBE_LOOK_UUIDS`** con UUID reales extraídos de los 5 XMP del usuario: Color `B952C231111CD8E0ECCF14B86BAA7077`, Landscape `6F9C877E84273F4E8271E6B91BEB36A1`, Vivid `EA1DE074F188405965EF399C72C221D9`, Portrait `D6496412E06A83789C499DF9540AA616`, Monochrome `0CFE8F8AB5F63B2A73CE0B0077D20817`. Adobe Standard → CameraProfile.
-- **PENDIENTE**: UUID de Adobe Neutral y Adaptive Color/Monochrome (el usuario no los envió → fallback CameraProfile). Añadir cuando facilite esos .xmp.
-- **Label de color**: se escribe `xmp:Label="Verde"` (LrC español). Si el usuario usa LrC inglés, cambiar a "Green".
-- **Verificado**: pytest 8/8 (`test_selected_profile_injected_as_look_with_correct_uuid`, `test_adobe_standard_profile_uses_camera_profile_not_look`). Fix en PREVIEW; requiere deploy para producción (edit.krfoto.com).
-
-### Iteración 42 (2026-06): Precisión del motor — no sobreiluminar a las personas (retratos)
-- **Síntoma (KRFC2585)**: retrato familiar exterior luminoso salía con `Exposición +0.10`, `Contraste +26`, `Blancos +23` → personas sobreexpuestas. Otras fotos del mismo set salían bien (KRFC2485: Exp 0, Luces −25, Blancos −5).
-- **Causa raíz**: `computeBasic` calcula `Blancos` estirando el punto blanco GLOBAL hacia 246 ignorando al sujeto; en retratos con ropa/fondo claros eso revienta al sujeto. La exposición híbrida además añadía un pequeño lift.
-- **Fix (`exposureEngine.computeBasic`, gated por CARAS)**: nueva PROTECCIÓN DEL SUJETO — con caras detectadas y sujeto claro (`subjectLuma`): exposición no sube (>=122→0), blancos NO se estiran hacia arriba (>=118→whites≤0; recuperación de blancos quemados SIEMPRE permitida), contraste positivo contenido (>=122→≤toneMax·0.45). `basicEngine` pasa `met.subjectLuma`. Fotos SIN caras → comportamiento clásico intacto.
-- **Observabilidad**: la auditoría de `computeAiBasics` ahora expone `subjectLuma`, `faceWeight`, `meter` (para tuning basado en datos / futura "Auditoría Visible").
-- **Verificado**: jest 90/90, 41 snapshots SIN cambios, nuevo `subjectProtection.test.js` (4 casos). Compila limpio.
-- **NOTA**: fix client-side en PREVIEW; requiere DEPLOY para producción (edit.krfoto.com).
-
-### Iteración 44 (2026-06): Fix bloqueo en selecciones grandes ("no me deja seguir", 506 fotos, prod)
-- **Causa**: proyecto reanudado (analyzeFolder no calcula fotometría) → al pulsar "Continuar" en Revisión, `ensureMetrics` decodifica TODAS las fotos sin feedback (parece congelado). Además `auditByFile` (it.42) se calculaba anticipadamente sobre todas las fotos.
-- **Fix (`Studio.jsx`, solo frontend)**: (1) `ensureMetrics` con toast de progreso (%), timeout de 20s por archivo (RAW corrupto no cuelga la transición) y concurrencia 5; (2) `auditByFile` gated a `step === "report"`.
-- **Verificado**: jest 151/151, 41 snapshots intactos; compila limpio. Desplegado a producción.
-
-### Iteración 45 (2026-06): Fix descarga ZIP en selecciones grandes (memoria del navegador)
-- **Causa**: con muchos DNG (506), la descarga cargaba todos los DNG en memoria en UN solo ZIP → navegador sin memoria → fallo.
-- **Fix (`ReportStep.jsx`, solo frontend)**: `runExport(embed)` trocea la salida en varios ZIP por presupuesto de tamaño (~300 MB, compresión STORE), guardando cada parte secuencialmente y liberando memoria (RAWAI_XMP_parteN.zip). Nuevo botón "Solo XMP (ligero)" que empaqueta solo sidecars sin cargar DNG (garantiza descargar los XMP siempre). Nota UI sobre permiso de descargas múltiples.
-- **Verificado**: compila limpio; suite previa 151/151 intacta. Desplegado a producción.
-
-### Iteración 46 (2026-06): Sincronización directa con plugin de Lightroom (agente local Base44)
-- Nuevo `components/studio/LightroomSync.jsx` en el paso de reporte: genera los XMP (mismo motor) y hace `POST {agentUrl}/lr-direct/apply-xmp` con `{ photos:[{ path, xmp_content, rating:5, label:"Verde", selectedByAI:true }] }`, sin descargar ZIP.
-- Ruta absoluta: campo "Carpeta base" (el navegador no expone rutas absolutas) unido a `webkitRelativePath` (quitando el primer segmento). Config (baseFolder/agentUrl/token) persistida en localStorage.
-- Errores claros si el agente no responde (CORS / agente cerrado / mixed content). Token opcional vía header `X-Agent-Token`.
-- **Prerequisitos EXTERNOS (Base44/navegador)**: el agente debe enviar cabeceras CORS para `https://edit.krfoto.com` y responder al preflight OPTIONS; usar Chrome (permite `http://localhost` desde HTTPS). No testeable sin el agente local corriendo.
-- Compila limpio; suite previa intacta.
-
-### Iteración 47 (2026-06): Eliminada la integración con Base44 / plugin Lightroom
-- Por petición del usuario, la app NO debe tener nada vinculado a Base44. Eliminado el componente `LightroomSync.jsx` y su uso en `ReportStep`. Sin referencias residuales (lr-direct/localhost:7457/apply-xmp/X-Agent-Token).
-- La app queda independiente: entrega vía descarga (ZIP troceado por tamaño) + "Solo XMP (ligero)". Compila limpio.
-
-## Backlog / Próximos
-- P1: Persistir/reanudar selección al reabrir proyecto (restaurar por nombre de archivo tras re-seleccionar carpeta).
-- P1: Vista de thumbnails reales de RAW (embedded preview) en vez de imágenes de muestra.
-- P2: Procesamiento en la nube (CloudJob) con cola y estado.
-- P2: Carga de preset .xmp externo y gestión de perfiles de estilo guardados.
-- P2: Estadísticas del reportaje / bento report ampliado.
-
-## Notas
-- Selección IA es heurística determinista (sin LLM).
-- Thumbnails de revisión usan imágenes de muestra (los RAW no son previsualizables en navegador).
+## Notas críticas
+- Idioma: SIEMPRE responder en español.
+- NUNCA reconectar con Base44/localhost.
+- Cambios de fotometría deben ir gated para no romper los 41 snapshots.

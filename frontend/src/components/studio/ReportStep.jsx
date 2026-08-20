@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { embedXmpInDng, readXmpFromDng } from "@/lib/dngXmp";
 import { verifyXmp } from "@/lib/xmp/verifyXmp";
 import VerificationPanel from "@/components/studio/VerificationPanel";
+import LightroomPlugin from "@/components/studio/LightroomPlugin";
 
 const baseName = (n) => n.replace(/\.[^.]+$/, "");
 const isDng = (n) => /\.dng$/i.test(n);
@@ -127,6 +128,8 @@ export default function ReportStep({ report, projectId, payload, files = [], aud
         Con muchas fotos, la descarga se divide automáticamente en varios ZIP (por tamaño) para no agotar la memoria del navegador.
         Si tu navegador pide permiso para “descargar varios archivos”, acéptalo. <b>Solo XMP</b> descarga los sidecars sin incrustar en el DNG (muy ligero).
       </p>
+
+      <LightroomPlugin projectId={projectId} payload={payload} files={files} />
 
       <VerificationPanel report={verification} onRetry={download} retrying={downloading} />
     </section>
