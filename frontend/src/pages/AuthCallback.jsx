@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Aperture } from "lucide-react";
@@ -24,7 +25,10 @@ export default function AuthCallback() {
         setUser(res.data.user);
         window.history.replaceState(null, "", "/dashboard");
         navigate("/dashboard", { state: { user: res.data.user } });
-      } catch {
+      } catch (err) {
+        if (err?.response?.status === 403) {
+          toast.error("Acceso restringido", { description: "Esta cuenta no está autorizada para usar RAW AI Studio." });
+        }
         navigate("/");
       }
     })();

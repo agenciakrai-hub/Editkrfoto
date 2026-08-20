@@ -34,6 +34,14 @@ api_router = APIRouter(prefix="/api")
 EMERGENT_AUTH_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 
+# Lista blanca de correos autorizados (app privada). Vacía = sin restricción.
+ALLOWED_EMAILS = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()}
+
+def _email_allowed(email: Optional[str]) -> bool:
+    if not ALLOWED_EMAILS:
+        return True
+    return (email or "").strip().lower() in ALLOWED_EMAILS
+
 # Strong references to background tasks so they are not garbage-collected mid-run.
 _bg_tasks = set()
 
@@ -196,6 +204,8 @@ async def get_current_user(request: Request) -> User:
     user_doc = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
+    if not _email_allowed(user_doc.get("email")):
+        raise HTTPException(status_code=403, detail="Acceso restringido")
     return User(**user_doc)
 
 
@@ -214,6 +224,8 @@ async def create_session(request: Request, response: Response):
         raise HTTPException(status_code=401, detail="No se pudo validar la sesión de Google")
 
     email = data["email"]
+    if not _email_allowed(email):
+        raise HTTPException(status_code=403, detail="Acceso restringido: esta cuenta no está autorizada.")
     existing = await db.users.find_one({"email": email}, {"_id": 0})
     if existing:
         user_id = existing["user_id"]
