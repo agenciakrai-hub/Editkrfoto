@@ -14,18 +14,34 @@ export const PRECISION_PROFILES = {
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
 // Devuelve { exposure, contrast, highlights, shadows, whites, blacks } para ESTA foto.
-export function computeBasic(pm, mode = "balanced", meterOverride = null, subjectLuma = null) {
+// opts.subjectTarget: cuando hay caras, expone PARA EL SUJETO (lleva la piel a la banda ideal),
+// en lugar de usar el fotómetro mezclado cara+fondo (evita dejar caras oscuras si el fondo es claro).
+export function computeBasic(pm, mode = "balanced", meterOverride = null, subjectLuma = null, opts = {}) {
   const P = PRECISION_PROFILES[mode] || PRECISION_PROFILES.balanced;
   const meter = (meterOverride != null ? meterOverride : (pm.cP50 || pm.p50)); // metering (híbrido con caras si se provee)
   const subjPath = meterOverride != null;                 // ruta con caras (retrato)
   const subj = subjPath ? (subjectLuma != null ? subjectLuma : meter) : null;
 
-  // --- Exposición: lleva la medición del sujeto a la banda objetivo del modo ---
-  let target;
-  if (meter < P.medLo) target = P.medLo;
-  else if (meter > P.medHi) target = P.medHi;
-  else target = meter; // ya está bien expuesto → no toca
-  let exposure = clamp(Math.log2(target / Math.max(4, meter)), -P.expMax, P.expMax);
+  // Banda de PIEL ideal (Zona V–VI): la cara bien expuesta vive aquí. Se abre un poco por modo.
+  const SKIN = { conservative: [116, 150], balanced: [118, 148], aggressive: [120, 146] }[mode] || [118, 148];
+
+  // --- Exposición ---
+  let exposure;
+  if (subjPath && opts.subjectTarget && subj != null) {
+    // EXPONER PARA LA PERSONA: lleva la luminancia de la piel a la banda ideal (no el fondo).
+    let tgt;
+    if (subj < SKIN[0]) tgt = SKIN[0];
+    else if (subj > SKIN[1]) tgt = SKIN[1];
+    else tgt = subj; // ya está bien → no toca
+    exposure = clamp(Math.log2(tgt / Math.max(4, subj)), -P.expMax, P.expMax);
+  } else {
+    // Ruta clásica (sin caras o sin subject-target): lleva el fotómetro a la banda del modo.
+    let target;
+    if (meter < P.medLo) target = P.medLo;
+    else if (meter > P.medHi) target = P.medHi;
+    else target = meter; // ya está bien expuesto → no toca
+    exposure = clamp(Math.log2(target / Math.max(4, meter)), -P.expMax, P.expMax);
+  }
 
   // Capa contextual (sin IA): ajusta la intención según la escena.
   if (pm.scene === "low_key" && exposure > 0) exposure *= 0.4;               // preserva el ambiente oscuro

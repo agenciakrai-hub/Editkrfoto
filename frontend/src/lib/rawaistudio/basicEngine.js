@@ -81,7 +81,9 @@ export function computeAiBasics(analysis, opts = {}) {
   const meterOverride = (faces && faces.length) ? met.meter : null;
 
   // --- Exposición y tono (6): motor v2 + zona muerta "no tocar" ---
-  const base = pm ? computeBasic(pm, mode, meterOverride, met.subjectLuma)
+  // Subject-target: expone PARA la persona solo si la cara pesa de verdad (no una cara diminuta/borrosa).
+  const subjectTarget = meterOverride != null && (met.faceWeight || 0) >= 0.25;
+  const base = pm ? computeBasic(pm, mode, meterOverride, met.subjectLuma, { subjectTarget })
     : { exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 };
   const exposure = Math.abs(base.exposure) < dz.exp ? 0 : Math.round(base.exposure * 100) / 100;
   const contrast = snap(base.contrast, dz.tone);

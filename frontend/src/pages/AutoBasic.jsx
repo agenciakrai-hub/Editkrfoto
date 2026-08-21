@@ -10,8 +10,13 @@ import { PRECISION_PROFILES } from "@/lib/rawaistudio/exposureEngine";
 import { computeAiBasics, NEUTRAL_AI_BASICS } from "@/lib/rawaistudio/basicEngine";
 import { buildStyleXmp } from "@/lib/xmp/buildXmp";
 import { embedXmpInDng } from "@/lib/dngXmp";
+import LightroomPlugin from "@/components/studio/LightroomPlugin";
 
 const isDng = (name) => /\.dng$/i.test(name || "");
+
+const SCENE_LABEL = {
+  high_key: "Clave alta", low_key: "Clave baja", backlit: "Contraluz", flash: "Flash", normal: "Normal",
+};
 
 export default function AutoBasic() {
   const inputRef = useRef(null);
@@ -78,6 +83,24 @@ export default function AutoBasic() {
 
   const busy = phase === "analyzing";
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
+
+  // Construye los básicos de una foto (mismo motor que la exportación).
+  const basicFor = (it) => it.photometrics
+    ? computeAiBasics({ photometrics: it.photometrics, color: it.color }, { mode, deadzone: "prudent", wbStrength: 0.5 }).aiBasicAdjustments
+    : NEUTRAL_AI_BASICS;
+
+  // Para "Enviar a Lightroom": genera los XMP (sidecar) por nombre de archivo original.
+  const buildPhotosForSync = () => items.map((it) => ({
+    filename: it.name,
+    xmp_content: buildStyleXmp(it.name, basicFor(it), profile || "Adobe Standard"),
+  }));
+
+  const sceneCounts = items.reduce((acc, it) => {
+    const s = it.photometrics?.scene;
+    if (s) acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
+  const sceneEntries = Object.entries(sceneCounts).sort((a, b) => b[1] - a[1]);
 
   return (
     <AppShell>
@@ -154,6 +177,27 @@ export default function AutoBasic() {
           </p>
         )}
       </div>
+
+      {phase === "ready" && items.length > 0 && (
+        <>
+          {sceneEntries.length > 0 && (
+            <div className="mt-6 rounded-xl border border-zinc-800 bg-[#141418] p-5" data-testid="autobasic-scene-summary">
+              <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">Contextos de escena detectados</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sceneEntries.map(([s, n]) => (
+                  <span key={s} data-testid={`scene-${s}`} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-[#1c1c22] px-3 py-1 text-xs text-zinc-300">
+                    {SCENE_LABEL[s] || s} <span className="font-mono text-emerald-400">{n}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          <LightroomPlugin
+            getPhotos={buildPhotosForSync}
+            title="Enviar a Lightroom (sincroniza solo)"
+            subtitle="Envía los básicos de esta carpeta al plugin; en Lightroom selecciona las fotos y sincroniza." />
+        </>
+      )}
 
       {phase === "idle" && (
         <div className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-[#141418] p-12 text-center" data-testid="autobasic-empty">

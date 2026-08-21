@@ -1,0 +1,23 @@
+{
+  "summary": "Frontend-only smoke + Dashboard functional test on the public preview URL with an allowlisted session cookie for agenciakrai@gmail.com. Verified: (1) Dashboard header stats (Reportajes/Fotografías/Procesadas/Completados) render for the 2 demo projects; (2) 'project-search-input' filters correctly ('Marta' -> 1 card); (3) 'project-sort-select' sorts by name (A-Z result: 'Boda Ana & Luis', 'Boda Marta & Juan'); (4) each project card shows client_name and formatted event_date ('Ana & Luis', '10 may 2026'); (5) edit-project-<id> opens modal in edit mode with prefilled name/client/date; PUT /api/projects/{id} succeeds and card re-renders with the new name; edit reverted successfully; (6) all 7 nav buttons (nav-dashboard/autobasic/styles/learning/engine/validation/profiles) navigate to the correct route and each target page renders its key testid (autobasic-empty, style-name-input/style-url-input, learning-upload-btn, lab-full-toggle + lab-pick-folder-btn, validation-empty, extract-url-input + extract-analyze-btn). catalog-search-input/catalog-group-toggle are correctly absent because the profile catalog is empty (only appear when >0 profiles). 0 console errors, 0 pageerror events across the whole run.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Dashboard.jsx delete handler (remove) has no try/catch — a failing DELETE will leave the card removed from state optimistically without user feedback and no rollback. Wrap in try/catch and toast.error + restore on failure.",
+    "Dashboard sort by 'event' uses localeCompare on ISO date strings (b.event_date - a.event_date). Works while dates are 'YYYY-MM-DD' but silently mis-sorts if event_date is ever null/empty (empty string sorts last which is fine, but mixed formats would break). Consider explicit Date-based comparator with null-last guard.",
+    "openEdit uses e.stopPropagation() but relies on the caller passing the event; safer to also call e?.preventDefault(). Minor."
+  ],
+  "updated_files": [],
+  "success_rate": { "frontend": "100% (Dashboard functional + 7/7 tool routes smoke pass, 0 console errors)" },
+  "test_credentials": "Ephemeral session test_session_iter17_1787339635230 in test_database bound to agenciakrai@gmail.com (allowlisted). Created and deleted within this iteration.",
+  "seed_data_creation": "No new data. Reused existing demo-proj-1 (Boda Ana & Luis) and demo-proj-2 (Boda Marta & Juan) already seeded for test-user-1787339551.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Session/user seeding pattern in /app/memory/test_credentials.md works as-is; email must be in ALLOWED_EMAILS (agenciakrai@gmail.com). Demo projects demo-proj-1/demo-proj-2 exist under user_id=test-user-1787339551. AutoBasic/EngineLab/Validation need a real local RAW folder for E2E — only smoke render is possible via automation. For ProfileExtractor catalog-search/catalog-group testids, seed >=1 doc in the profiles collection first."
+}

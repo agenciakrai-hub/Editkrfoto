@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import AppShell from "@/components/AppShell";
 import api from "@/lib/api";
-import { Link2, Loader2, Save, Trash2, Search, CheckCircle2, AlertTriangle, FileJson, FileArchive } from "lucide-react";
+import { Link2, Loader2, Save, Trash2, Search, CheckCircle2, AlertTriangle, FileJson, FileArchive, Layers } from "lucide-react";
 import { saveAs } from "file-saver";
 
 const COMPAT = {
@@ -16,6 +16,8 @@ export default function ProfileExtractor() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [saved, setSaved] = useState([]);
+  const [catQuery, setCatQuery] = useState("");
+  const [grouped, setGrouped] = useState(false);
 
   const loadSaved = () => api.get("/profile-extractor/profiles").then((r) => setSaved(r.data)).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial (solo al montar)
@@ -124,7 +126,17 @@ export default function ProfileExtractor() {
       <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-display text-lg font-semibold">Catálogo de perfiles ({saved.length})</h2>
         {saved.length > 0 && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded-md border border-zinc-700 bg-[#101012] px-2.5">
+              <Search className="h-3.5 w-3.5 text-zinc-500" />
+              <input data-testid="catalog-search-input" value={catQuery} onChange={(e) => setCatQuery(e.target.value)}
+                placeholder="Buscar perfil o cámara…"
+                className="w-44 bg-transparent py-1.5 text-xs text-zinc-100 outline-none" />
+            </div>
+            <button data-testid="catalog-group-toggle" onClick={() => setGrouped((g) => !g)}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium ${grouped ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300" : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"}`}>
+              <Layers className="h-3.5 w-3.5" /> Agrupar por fabricante
+            </button>
             <button data-testid="export-json-btn" onClick={() => exportCatalog("json")}
               className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800">
               <FileJson className="h-3.5 w-3.5" /> Exportar JSON
@@ -138,26 +150,42 @@ export default function ProfileExtractor() {
       </div>
       {saved.length === 0 ? (
         <p className="mt-2 text-sm text-zinc-600">Aún no has guardado perfiles.</p>
-      ) : (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {saved.map((p) => {
-            const c = COMPAT[p.compatible] || COMPAT.unknown;
-            return (
-              <div key={p.id} data-testid={`saved-profile-${p.id}`} className="rounded-xl border border-zinc-800 bg-[#141418] p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="truncate text-sm font-medium text-zinc-100">{p.display_name || p.name}</p>
-                  <button data-testid={`delete-extracted-${p.id}`} onClick={() => remove(p.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
-                <p className="mt-0.5 text-xs text-zinc-500">{[p.manufacturer, p.camera_model].filter(Boolean).join(" · ") || "Sin cámara asociada"}</p>
-                <div className="mt-3 flex items-center gap-2">
-                  <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 font-mono text-[10px] uppercase text-zinc-400">{p.format || p.profile_type}</span>
-                  <span className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${c.cls}`}>{c.label}</span>
-                </div>
+      ) : (() => {
+        const q = catQuery.trim().toLowerCase();
+        const list = saved.filter((p) => !q || [p.display_name, p.name, p.manufacturer, p.camera_model].filter(Boolean).some((s) => s.toLowerCase().includes(q)));
+        if (list.length === 0) return <p className="mt-2 text-sm text-zinc-600" data-testid="catalog-no-results">Sin resultados para “{catQuery}”.</p>;
+        const ProfileCard = (p) => {
+          const c = COMPAT[p.compatible] || COMPAT.unknown;
+          return (
+            <div key={p.id} data-testid={`saved-profile-${p.id}`} className="rounded-xl border border-zinc-800 bg-[#141418] p-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="truncate text-sm font-medium text-zinc-100">{p.display_name || p.name}</p>
+                <button data-testid={`delete-extracted-${p.id}`} onClick={() => remove(p.id)} className="text-zinc-600 hover:text-rose-400"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
-            );
-          })}
-        </div>
-      )}
+              <p className="mt-0.5 text-xs text-zinc-500">{[p.manufacturer, p.camera_model].filter(Boolean).join(" · ") || "Sin cámara asociada"}</p>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="rounded-md bg-zinc-800/60 px-2 py-0.5 font-mono text-[10px] uppercase text-zinc-400">{p.format || p.profile_type}</span>
+                <span className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${c.cls}`}>{c.label}</span>
+              </div>
+            </div>
+          );
+        };
+        if (!grouped) {
+          return <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{list.map(ProfileCard)}</div>;
+        }
+        const groups = {};
+        for (const p of list) { const k = p.manufacturer || "Sin fabricante"; (groups[k] = groups[k] || []).push(p); }
+        return (
+          <div className="mt-3 space-y-5" data-testid="catalog-grouped">
+            {Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).map(([man, items]) => (
+              <div key={man} data-testid={`catalog-group-${man}`}>
+                <p className="mb-2 font-mono text-xs uppercase tracking-wider text-zinc-500">{man} <span className="text-zinc-600">({items.length})</span></p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{items.map(ProfileCard)}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </AppShell>
   );
 }

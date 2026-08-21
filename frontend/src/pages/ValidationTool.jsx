@@ -149,6 +149,26 @@ export default function ValidationTool() {
     saveAs(blob, `validacion_fase1_${(folderName || "sesion").replace(/\s+/g, "_")}.json`);
   };
 
+  const exportCsv = () => {
+    if (!report) return;
+    const cols = ["secuencia", "archivo", "estado", "seleccionada", "confianza", "tecnico", "cara", "ojos", "nitidez", "exposicion", "num_caras", "warnings", "motivo"];
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [cols.join(",")];
+    for (const seq of report.sequences) {
+      for (const p of seq.photos) {
+        rows.push([
+          seq.sequenceId, p.filename, p.state, p.selected ? "si" : "no",
+          p.selectionConfidence, p.technicalScore, p.faceScore ?? "", p.eyesScore,
+          p.sharpnessScore, p.exposureScore, p.faceCount,
+          (p.warningTypes || []).map((w) => WARNING_LABELS[w] || w).join("; "), p.reason,
+        ].map(esc).join(","));
+      }
+    }
+    const blob = new Blob(["\uFEFF" + rows.join("\n")], { type: "text/csv;charset=utf-8" });
+    saveAs(blob, `validacion_fase1_${(folderName || "sesion").replace(/\s+/g, "_")}.csv`);
+    toast.success("CSV exportado");
+  };
+
   const s = report?.summary;
   const filteredSeqs = useMemo(() => {
     if (!report) return [];
@@ -195,6 +215,10 @@ export default function ValidationTool() {
               <button data-testid="validation-export-btn" onClick={exportJson}
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-zinc-950 hover:scale-[1.02]">
                 <Download className="h-4 w-4" /> Exportar JSON
+              </button>
+              <button data-testid="validation-export-csv-btn" onClick={exportCsv}
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800">
+                <Download className="h-4 w-4" /> Exportar CSV
               </button>
               <button data-testid="validation-reset-btn" onClick={reset}
                 className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800">

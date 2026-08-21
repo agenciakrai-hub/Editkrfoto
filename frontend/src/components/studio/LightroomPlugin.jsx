@@ -5,7 +5,7 @@ import api from "@/lib/api";
 
 // Conexión PROPIA con Lightroom vía plugin (independiente de terceros).
 // La web envía los XMP a mi backend; el plugin de Lightroom los descarga y aplica.
-export default function LightroomPlugin({ projectId, payload }) {
+export default function LightroomPlugin({ projectId, payload, getPhotos, title, subtitle }) {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -21,8 +21,16 @@ export default function LightroomPlugin({ projectId, payload }) {
   const push = async () => {
     setBusy(true);
     try {
-      const r = await api.post(`/projects/${projectId}/lr-push`, payload);
-      const n = r.data?.written || 0;
+      let n = 0;
+      if (getPhotos) {
+        const photos = await getPhotos();
+        if (!photos?.length) { toast.error("No hay XMP para enviar"); return; }
+        const r = await api.post("/lr/push", { photos });
+        n = r.data?.written || 0;
+      } else {
+        const r = await api.post(`/projects/${projectId}/lr-push`, payload);
+        n = r.data?.written || 0;
+      }
       if (!n) { toast.error("No hay XMP para enviar"); return; }
       toast.success(`${n} fotos enviadas a Lightroom`, {
         description: "En Lightroom: selecciona las fotos y usa el plugin RAW AI Studio › Sincronizar.",
@@ -41,8 +49,8 @@ export default function LightroomPlugin({ projectId, payload }) {
           <Plug className="h-5 w-5 text-sky-400" />
         </div>
         <div>
-          <h3 className="font-display text-lg font-semibold">Enviar a Lightroom (plugin propio)</h3>
-          <p className="text-sm text-zinc-500">Sin descargar ZIP: envía los XMP y el plugin los aplica al catálogo.</p>
+          <h3 className="font-display text-lg font-semibold">{title || "Enviar a Lightroom (plugin propio)"}</h3>
+          <p className="text-sm text-zinc-500">{subtitle || "Sin descargar ZIP: envía los XMP y el plugin los aplica al catálogo."}</p>
         </div>
       </div>
 

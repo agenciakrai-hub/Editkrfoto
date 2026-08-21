@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { saveAs } from "file-saver";
 import { toast } from "sonner";
-import { Globe, Sparkles, Loader2, ArrowLeftRight } from "lucide-react";
+import { Globe, Sparkles, Loader2, ArrowLeftRight, Search } from "lucide-react";
 import { buildStyleXmp } from "@/lib/xmp/buildXmp";
 import StyleComparePanel from "@/components/studio/StyleComparePanel";
 import StyleCard from "@/components/studio/StyleCard";
@@ -14,9 +14,11 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
   const [creating, setCreating] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [cmp, setCmp] = useState(["", ""]);
+  const [q, setQ] = useState("");
   const pollers = useRef({});
 
   const readyProfiles = profiles.filter((p) => p.status === "ready");
+  const shown = profiles.filter((p) => !q.trim() || (p.name || "").toLowerCase().includes(q.trim().toLowerCase()));
 
   const exportXmp = (p, e) => {
     e.stopPropagation();
@@ -104,11 +106,25 @@ export default function PhotographerStyles({ onUseStyle, activeName }) {
         )}
 
         {profiles.length > 0 && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {profiles.map((p) => (
-              <StyleCard key={p.id} p={p} active={activeName === p.name}
-                onUse={onUseStyle} onDelete={remove} onExport={exportXmp} />
-            ))}
+          <div className="mt-5">
+            {profiles.length > 3 && (
+              <div className="mb-3 flex items-center gap-2 rounded-lg border border-zinc-700 bg-[#101012] px-3">
+                <Search className="h-4 w-4 text-zinc-500" />
+                <input data-testid="style-search-input" value={q} onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar estilo por nombre…"
+                  className="flex-1 bg-transparent py-2 text-sm text-zinc-100 outline-none" />
+              </div>
+            )}
+            {shown.length === 0 ? (
+              <p className="text-sm text-zinc-600" data-testid="style-no-results">Sin estilos para “{q}”.</p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {shown.map((p) => (
+                  <StyleCard key={p.id} p={p} active={activeName === p.name}
+                    onUse={onUseStyle} onDelete={remove} onExport={exportXmp} />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

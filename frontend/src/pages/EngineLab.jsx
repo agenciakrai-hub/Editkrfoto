@@ -44,6 +44,7 @@ export default function EngineLab() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [folderName, setFolderName] = useState(null);
+  const [full, setFull] = useState(false);
 
   const sampleEven = (arr, max) => {
     if (arr.length <= max) return arr;
@@ -57,7 +58,7 @@ export default function EngineLab() {
     const raws = all.filter((f) => isRaw(f.name));
     if (!raws.length) { toast.error("No hay RAW/JPG en esa carpeta"); return; }
     setFolderName(raws[0].webkitRelativePath?.split("/")[0] || "Carpeta");
-    const sample = sampleEven(raws, SAMPLE_MAX);
+    const sample = full ? raws : sampleEven(raws, SAMPLE_MAX);
     setBusy(true); setRows([]); setProgress({ done: 0, total: sample.length });
     try {
       const results = await mapLimit(sample, 4, async (file) => {
@@ -91,8 +92,14 @@ export default function EngineLab() {
           <input ref={inputRef} type="file" webkitdirectory="" directory="" multiple hidden onChange={onPick} data-testid="lab-folder-input" />
           <button data-testid="lab-pick-folder-btn" onClick={() => inputRef.current?.click()} disabled={busy}
             className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40">
-            <FolderUp className="h-4 w-4" /> Elegir carpeta (muestra {SAMPLE_MAX})
+            <FolderUp className="h-4 w-4" /> Elegir carpeta ({full ? "todas" : `muestra ${SAMPLE_MAX}`})
           </button>
+
+          <label data-testid="lab-full-toggle" className="inline-flex cursor-pointer items-center gap-2 text-xs text-zinc-400">
+            <input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} disabled={busy}
+              className="h-3.5 w-3.5 accent-emerald-400" />
+            Analizar todas (puede tardar más)
+          </label>
 
           <div className="flex items-center gap-1.5" data-testid="lab-mode-switch">
             {Object.values(PRECISION_PROFILES).map((p) => (

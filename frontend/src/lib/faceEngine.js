@@ -49,7 +49,7 @@ function imgFromUrl(url) {
 // Nitidez facial real: varianza del laplaciano sobre el recorte de la cara (0..1).
 function measureFaceSharpness(img, box) {
   try {
-    const S = 48;
+    const S = 96; // mayor resolución → discrimina mejor cara nítida vs blanda y mide mejor la luz de la piel
     const c = document.createElement("canvas");
     c.width = S; c.height = S;
     const ctx = c.getContext("2d", { willReadFrequently: true });

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { saveAs } from "file-saver";
 import AppShell from "@/components/AppShell";
 import api from "@/lib/api";
 import { parseXmp } from "@/lib/xmpParse";
 import { PARAM_DEFS } from "@/lib/paramDefs";
-import { Brain, Upload, Loader2, Save, Trash2, Star, FileText, X, Sparkles } from "lucide-react";
+import { buildStyleXmp } from "@/lib/xmp/buildXmp";
+import { Brain, Upload, Loader2, Save, Trash2, Star, FileText, X, Sparkles, Download, Target } from "lucide-react";
 
 const DEF = Object.fromEntries(PARAM_DEFS.map((p) => [p.key, p]));
 const BASIC_KEYS = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "temperature", "tint"];
@@ -87,6 +89,31 @@ export default function LearningModule() {
   };
 
   const clearAll = () => { setSamples([]); setAnalysis(null); };
+
+  // Consistencia: menor dispersión relativa entre correcciones = estilo más definido (0-100).
+  const consistency = (() => {
+    if (samples.length < 2) return null;
+    const spans = { exposure: 2, contrast: 40, highlights: 60, shadows: 60, whites: 40, blacks: 40, temperature: 3000, tint: 60, clarity: 40, vibrance: 60, saturation: 60 };
+    const scores = [];
+    for (const k of ALL_KEYS) {
+      const vals = samples.map((s) => s.values[k]).filter((v) => v != null);
+      if (vals.length < 2) continue;
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const sd = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length);
+      scores.push(Math.max(0, 1 - sd / (spans[k] || 40)));
+    }
+    if (!scores.length) return null;
+    return Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100);
+  })();
+
+  const exportXmp = () => {
+    if (!analysis) return;
+    const params = { ...(analysis.basic || {}), ...(analysis.creative || {}) };
+    const xmp = buildStyleXmp(saveName.trim() || "Mi estilo", params, "Adobe Standard");
+    const safe = (saveName.trim() || "mi_estilo").replace(/[^\w\- ]+/g, "").replace(/\s+/g, "_");
+    saveAs(new Blob([xmp], { type: "application/rdf+xml" }), `${safe}.xmp`);
+    toast.success("Perfil exportado", { description: `${safe}.xmp listo para Lightroom` });
+  };
 
   const saveProfile = async () => {
     const name = saveName.trim();
@@ -180,6 +207,24 @@ export default function LearningModule() {
           </p>
           <p className="mt-2 text-sm leading-6 text-zinc-300" data-testid="learning-summary">{analysis.summary}</p>
 
+          {consistency != null && (
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-zinc-800 bg-[#101012] p-3" data-testid="learning-consistency">
+              <Target className="h-4 w-4 shrink-0 text-emerald-400" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">Consistencia de tu estilo</span>
+                  <span className="font-mono text-emerald-300">{consistency}%</span>
+                </div>
+                <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                  <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${consistency}%` }} />
+                </div>
+                <p className="mt-1 text-[11px] text-zinc-600">
+                  {consistency >= 70 ? "Estilo muy definido: tus correcciones son coherentes." : consistency >= 45 ? "Estilo moderado: hay variación entre fotos." : "Estilo variable: añade más correcciones similares para afinarlo."}
+                </p>
+              </div>
+            </div>
+          )}
+
           <p className="mt-5 font-mono text-xs uppercase tracking-wider text-zinc-500">Ajustes básicos (media)</p>
           <div className="mt-2"><TendencyGrid keys={BASIC_KEYS} values={analysis.basic} testid="learning-basic-grid" /></div>
 
@@ -193,6 +238,10 @@ export default function LearningModule() {
             <button data-testid="learning-save-btn" onClick={saveProfile} disabled={!saveName.trim() || !samples.length}
               className="inline-flex items-center gap-2 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40 disabled:hover:scale-100">
               <Save className="h-4 w-4" /> Guardar perfil personal
+            </button>
+            <button data-testid="learning-export-xmp-btn" onClick={exportXmp}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800">
+              <Download className="h-4 w-4" /> Exportar como .xmp
             </button>
           </div>
         </div>

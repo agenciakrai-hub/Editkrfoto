@@ -44,6 +44,22 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   DoS por falta de límites en generación de ZIP.
 - P4: Perfiles "Adobe Neutro" y "Adaptables" (requiere XMP del usuario para extraer UUIDs).
 
+## Motor: precisión de análisis (jun 2026)
+- **Exposición orientada al sujeto** (`exposureEngine.computeBasic` + `basicEngine.computeAiBasics`):
+  cuando hay una cara con peso real (faceWeight ≥ 0.25), la exposición apunta a la
+  luminancia de la PIEL hacia una banda ideal (~118–148, según modo) en vez del fotómetro
+  mezclado cara+fondo. Levanta caras oscuras sobre fondos claros; sigue protegiendo de
+  sobreexposición. GATED por `opts.subjectTarget` → snapshots (fixtures sin caras) intactos.
+- **Culling más preciso**: recorte facial de nitidez/luma subido de 48→96px (`faceEngine`)
+  → mejor discriminación de la toma más nítida y mejor medida de luz de la piel.
+- Tests: 157 pasan (nuevos en `subjectExposure.test.js`), 41 snapshots intactos.
+
+## UI aditiva por herramienta (jun 2026)
+- Dashboard: stats + buscador + orden + editar (cliente/fecha). Auto XMP: envío directo a
+  Lightroom (getPhotos → /api/lr/push) + resumen de escenas. Estilos: buscador. Aprendizaje:
+  consistencia + export .xmp. Motor: "analizar todas". Validación: export CSV. Perfiles:
+  buscador + agrupar por fabricante. Verificado por testing agent (0 errores de consola).
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.
