@@ -42,6 +42,36 @@ def _email_allowed(email: Optional[str]) -> bool:
         return True
     return (email or "").strip().lower() in ALLOWED_EMAILS
 
+# ----------------------------- Stripe / Suscripciones -----------------------------
+import stripe as _stripe
+_stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or "sk_test_emergent"
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+OWNER_EMAIL = (os.environ.get("OWNER_EMAIL") or "").strip().lower()
+TRIAL_DAYS = int(os.environ.get("TRIAL_DAYS", "15"))
+
+# Planes: todas las funciones desbloqueadas. Precios en Stripe por lookup_key.
+PLAN_LABELS = {
+    "pro_monthly_eur": {"name": "Pro Mensual", "interval": "month", "currency": "eur", "amount": 40.0},
+    "pro_annual_eur":  {"name": "Pro Anual",   "interval": "year",  "currency": "eur", "amount": 300.0, "per_month": 25.0},
+    "pro_monthly_usd": {"name": "Pro Monthly",  "interval": "month", "currency": "usd", "amount": 44.0},
+    "pro_annual_usd":  {"name": "Pro Annual",   "interval": "year",  "currency": "usd", "amount": 324.0, "per_month": 27.0},
+}
+
+def _iso(dt):
+    return dt.astimezone(timezone.utc).isoformat()
+
+def _parse_dt(v):
+    if not v:
+        return None
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+    try:
+        d = datetime.fromisoformat(v)
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
 # Strong references to background tasks so they are not garbage-collected mid-run.
 _bg_tasks = set()
 
@@ -58,6 +88,10 @@ class User(BaseModel):
     email: str
     name: str
     picture: Optional[str] = None
+    subscription_status: Optional[str] = None
+    trial_ends_at: Optional[str] = None
+    plan_lookup_key: Optional[str] = None
+    subscription_current_period_end: Optional[str] = None
 
 
 class Project(BaseModel):
@@ -206,7 +240,65 @@ async def get_current_user(request: Request) -> User:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
     if not _email_allowed(user_doc.get("email")):
         raise HTTPException(status_code=403, detail="Acceso restringido")
-    return User(**user_doc)
+    return User(**{k: user_doc.get(k) for k in User.model_fields})
+
+
+async def _access_state(doc: dict) -> dict:
+    """Estado de acceso: owner (permanente), active (suscrito), trialing (prueba), expired."""
+    if not doc:
+        return {"access": False, "status": "none"}
+    email = (doc.get("email") or "").strip().lower()
+    now = datetime.now(timezone.utc)
+    if OWNER_EMAIL and email == OWNER_EMAIL:
+        return {"access": True, "status": "owner", "plan": "owner", "trial_ends_at": None, "current_period_end": None}
+    period_end = _parse_dt(doc.get("subscription_current_period_end"))
+    if doc.get("subscription_status") == "active" and period_end and period_end > now:
+        return {"access": True, "status": "active", "plan": doc.get("plan_lookup_key"),
+                "trial_ends_at": doc.get("trial_ends_at"), "current_period_end": doc.get("subscription_current_period_end")}
+    trial_end = _parse_dt(doc.get("trial_ends_at"))
+    if trial_end is None:  # backfill para usuarios antiguos
+        created = _parse_dt(doc.get("created_at")) or now
+        trial_end = created + timedelta(days=TRIAL_DAYS)
+        await db.users.update_one({"user_id": doc["user_id"]}, {"$set": {"trial_ends_at": _iso(trial_end)}})
+    if trial_end > now:
+        days_left = max(0, (trial_end - now).days + (1 if (trial_end - now).seconds else 0))
+        return {"access": True, "status": "trialing", "plan": None, "trial_ends_at": _iso(trial_end),
+                "current_period_end": None, "trial_days_left": days_left}
+    return {"access": False, "status": "expired", "plan": None, "trial_ends_at": _iso(trial_end),
+            "current_period_end": doc.get("subscription_current_period_end")}
+
+
+async def require_access(user: User = Depends(get_current_user)) -> User:
+    doc = await db.users.find_one({"user_id": user.user_id})
+    acc = await _access_state(doc)
+    if not acc["access"]:
+        raise HTTPException(status_code=402, detail="Tu prueba ha terminado. Suscríbete para continuar.")
+    return user
+
+
+async def _apply_subscription_from_session(session) -> None:
+    md = session.get("metadata") or {}
+    user_id = md.get("user_id")
+    sub_id = session.get("subscription")
+    if not user_id or not sub_id:
+        return
+    try:
+        sub = _stripe.Subscription.retrieve(sub_id)
+    except Exception:
+        return
+    lookup = None
+    try:
+        lookup = sub["items"]["data"][0]["price"].get("lookup_key")
+    except Exception:
+        pass
+    pe = sub.get("current_period_end")
+    upd = {"subscription_status": "active", "stripe_customer_id": sub.get("customer"),
+           "stripe_subscription_id": sub_id, "updated_at": _iso(datetime.now(timezone.utc))}
+    if lookup:
+        upd["plan_lookup_key"] = lookup
+    if pe:
+        upd["subscription_current_period_end"] = _iso(datetime.fromtimestamp(pe, tz=timezone.utc))
+    await db.users.update_one({"user_id": user_id}, {"$set": upd})
 
 
 # ----------------------------- Auth routes -----------------------------
@@ -235,12 +327,15 @@ async def create_session(request: Request, response: Response):
         }})
     else:
         user_id = f"user_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
         await db.users.insert_one({
             "user_id": user_id,
             "email": email,
             "name": data.get("name", email),
             "picture": data.get("picture"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": now.isoformat(),
+            "subscription_status": "trialing",
+            "trial_ends_at": _iso(now + timedelta(days=TRIAL_DAYS)),
         })
 
     session_token = data["session_token"]
@@ -257,7 +352,7 @@ async def create_session(request: Request, response: Response):
         secure=True, samesite="none", path="/", max_age=7 * 24 * 60 * 60,
     )
     user_doc = await db.users.find_one({"user_id": user_id}, {"_id": 0})
-    return {"user": User(**user_doc).model_dump()}
+    return {"user": User(**{k: user_doc.get(k) for k in User.model_fields}).model_dump()}
 
 
 @api_router.get("/auth/me")
@@ -313,7 +408,7 @@ async def lr_rotate_token(user: User = Depends(get_current_user)):
     return {"token": tok}
 
 @api_router.post("/lr/push")
-async def lr_push(body: LrPushBody, user: User = Depends(get_current_user)):
+async def lr_push(body: LrPushBody, user: User = Depends(require_access)):
     now = datetime.now(timezone.utc).isoformat()
     written = 0
     for p in body.photos:
@@ -385,7 +480,7 @@ async def list_projects(user: User = Depends(get_current_user)):
 
 
 @api_router.post("/projects", response_model=Project)
-async def create_project(payload: ProjectCreate, user: User = Depends(get_current_user)):
+async def create_project(payload: ProjectCreate, user: User = Depends(require_access)):
     project = Project(user_id=user.user_id, **payload.model_dump())
     await db.projects.insert_one(project.model_dump())
     return project
@@ -739,7 +834,7 @@ def build_zip_from_entries(entries):
 
 
 @api_router.post("/projects/{project_id}/lr-push")
-async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends(get_current_user)):
+async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends(require_access)):
     """Genera los XMP en el servidor y los encola directamente para el plugin de Lightroom.
     Evita el round-trip de ZIP por el navegador (clave con cientos de fotos)."""
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
@@ -771,7 +866,7 @@ async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends
 
 
 @api_router.post("/projects/{project_id}/generate-xmp")
-async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(get_current_user)):
+async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(require_access)):
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
@@ -838,7 +933,7 @@ async def run_cloud_job(job_id: str):
 
 
 @api_router.post("/projects/{project_id}/cloud-jobs", response_model=CloudJob)
-async def create_cloud_job(project_id: str, req: XmpRequest, user: User = Depends(get_current_user)):
+async def create_cloud_job(project_id: str, req: XmpRequest, user: User = Depends(require_access)):
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
@@ -1135,7 +1230,7 @@ def compute_selection(files):
 
 
 @api_router.post("/selection/analyze")
-async def analyze_selection(req: SelectionRequest, user: User = Depends(get_current_user)):
+async def analyze_selection(req: SelectionRequest, user: User = Depends(require_access)):
     if not req.files:
         raise HTTPException(status_code=400, detail="No hay archivos para analizar")
     return compute_selection(req.files)
@@ -1543,6 +1638,116 @@ async def export_profiles_zip(user: User = Depends(get_current_user)):
     buf = build_zip_from_entries(entries)
     return StreamingResponse(buf, media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="catalogo_perfiles_xmp.zip"'})
+
+
+# ----------------------------- Suscripciones / Pagos (Stripe) -----------------------------
+class CheckoutBody(BaseModel):
+    lookup_key: str
+    origin_url: str
+
+
+@api_router.get("/subscription/plans")
+async def subscription_plans():
+    plans = [{"lookup_key": lk, **meta} for lk, meta in PLAN_LABELS.items()]
+    return {"plans": plans, "trial_days": TRIAL_DAYS}
+
+
+@api_router.get("/subscription/me")
+async def subscription_me(user: User = Depends(get_current_user)):
+    doc = await db.users.find_one({"user_id": user.user_id})
+    return await _access_state(doc)
+
+
+@api_router.post("/payments/checkout")
+async def create_checkout(body: CheckoutBody, user: User = Depends(get_current_user)):
+    if body.lookup_key not in PLAN_LABELS:
+        raise HTTPException(status_code=400, detail="Plan no válido")
+    prices = _stripe.Price.list(lookup_keys=[body.lookup_key], active=True, limit=1).data
+    if not prices:
+        raise HTTPException(status_code=500, detail=f"Precio no encontrado: {body.lookup_key}")
+    price = prices[0]
+    origin = body.origin_url.rstrip("/")
+    kwargs = dict(
+        line_items=[{"price": price.id, "quantity": 1}],
+        mode="subscription",
+        customer_email=user.email,
+        success_url=f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}",
+        cancel_url=f"{origin}/pricing",
+        metadata={"user_id": user.user_id, "lookup_key": body.lookup_key},
+    )
+    try:
+        session = _stripe.checkout.Session.create(**kwargs, managed_payments={"enabled": True})
+    except _stripe.error.InvalidRequestError as e:
+        msg = (getattr(e, "user_message", "") or "").lower()
+        if "managed payments" in msg or "ineligible" in msg:
+            session = _stripe.checkout.Session.create(
+                **kwargs, automatic_tax={"enabled": True}, billing_address_collection="required")
+        else:
+            raise
+    await db.payment_transactions.insert_one({
+        "session_id": session.id, "user_id": user.user_id, "lookup_key": body.lookup_key,
+        "amount": (price.unit_amount or 0), "currency": price.currency,
+        "status": "initiated", "payment_status": "pending",
+        "created_at": _iso(datetime.now(timezone.utc)), "updated_at": _iso(datetime.now(timezone.utc)),
+    })
+    return {"checkout_url": session.url, "session_id": session.id}
+
+
+@api_router.get("/payments/status/{session_id}")
+async def payment_status(session_id: str):
+    rec = await db.payment_transactions.find_one({"session_id": session_id})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    if rec.get("payment_status") != "paid":
+        try:
+            s = _stripe.checkout.Session.retrieve(session_id)
+            if s.payment_status == "paid" or s.status == "complete":
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+                    {"$set": {"status": "completed", "payment_status": "paid",
+                              "stripe_subscription_id": s.get("subscription"),
+                              "updated_at": _iso(datetime.now(timezone.utc))}})
+                await _apply_subscription_from_session(s)
+                rec = await db.payment_transactions.find_one({"session_id": session_id})
+        except Exception:
+            pass
+    return {"session_id": rec["session_id"], "status": rec["status"], "payment_status": rec["payment_status"]}
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = _stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Firma inválida")
+    obj, t = event["data"]["object"], event["type"]
+    if t == "checkout.session.completed":
+        await db.payment_transactions.update_one(
+            {"session_id": obj["id"], "payment_status": {"$ne": "paid"}},
+            {"$set": {"status": "completed", "payment_status": obj.get("payment_status", "paid"),
+                      "stripe_subscription_id": obj.get("subscription"),
+                      "updated_at": _iso(datetime.now(timezone.utc))}})
+        await _apply_subscription_from_session(obj)
+    elif t in ("customer.subscription.updated", "customer.subscription.created", "invoice.payment_succeeded"):
+        sub_id = obj.get("subscription") or obj.get("id")
+        pe = obj.get("current_period_end")
+        upd = {"updated_at": _iso(datetime.now(timezone.utc))}
+        status = obj.get("status")
+        if status in ("active", "trialing") or t == "invoice.payment_succeeded":
+            upd["subscription_status"] = "active"
+        if pe:
+            upd["subscription_current_period_end"] = _iso(datetime.fromtimestamp(pe, tz=timezone.utc))
+        q = {"stripe_subscription_id": sub_id}
+        if await db.users.find_one(q):
+            await db.users.update_one(q, {"$set": upd})
+    elif t == "customer.subscription.deleted":
+        await db.users.update_one({"stripe_subscription_id": obj.get("id")},
+            {"$set": {"subscription_status": "canceled", "updated_at": _iso(datetime.now(timezone.utc))}})
+    return {"status": "ok"}
+
+
 app.include_router(api_router)
 
 _cors_origins = [o for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o]
