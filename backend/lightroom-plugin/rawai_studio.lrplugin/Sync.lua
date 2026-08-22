@@ -12,7 +12,7 @@ local prefs = LrPrefs.prefsForPlugin()
 local JSON = require "json"
 
 local function apiCall(method, path, body)
-    local base = (prefs.baseUrl or "https://edit.krfoto.com"):gsub("/+$", "")
+    local base = (prefs.baseUrl or "https://edit.krimagina.com"):gsub("/+$", "")
     local url = base .. "/api" .. path
     local headers = {
         { field = "Content-Type", value = "application/json" },

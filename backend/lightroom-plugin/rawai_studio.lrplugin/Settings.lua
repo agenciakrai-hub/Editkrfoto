@@ -8,7 +8,7 @@ local prefs = LrPrefs.prefsForPlugin()
 LrFunctionContext.callWithContext("rawai_settings", function(context)
     local f = LrView.osFactory()
     local props = LrView.bind and {} or {}
-    local url = prefs.baseUrl or "https://edit.krfoto.com"
+    local url = prefs.baseUrl or "https://edit.krimagina.com"
     local token = prefs.token or ""
 
     local shareProps = { baseUrl = url, token = token }
