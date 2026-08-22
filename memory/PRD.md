@@ -54,6 +54,18 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   → mejor discriminación de la toma más nítida y mejor medida de luz de la piel.
 - Tests: 157 pasan (nuevos en `subjectExposure.test.js`), 41 snapshots intactos.
 
+## Motor v2 (jun 2026): contraluz + ojos en grupos + comparador de ráfaga
+- **Contraluz extremo** (`exposureEngine`): con cara oscura en `scene==="backlit"` y subject-target,
+  NO se recorta el lift por altas luces/p99 y se recupera el fondo quemado con highlights (−40).
+  → caras bien expuestas con sol/ventana detrás. Gated.
+- **Ojos/parpadeos en grupos grandes** (`burstDecision.evalPhoto`): tolerancia de 1 parpadeo por
+  cada 8 personas (`eyeTolerance = floor(peopleCount/8)`) en `allMainOpen`, warnings CLOSED_EYES/
+  PARTIAL_BLINK y faceIssues. Grupos ≤7 = estricto de siempre (tests intactos).
+- **Comparador de ráfaga** (`ReviewStep`): pestaña "Por ráfaga" que agrupa por `burstId` (>1 toma),
+  muestra las hermanas juntas con chips de nitidez/ojos y permite elegir la definitiva con un clic
+  (`chooseExclusive`: selecciona esa y descarta las demás de la secuencia).
+- Tests: 160 pasan (3 nuevos), 41 snapshots intactos.
+
 ## UI aditiva por herramienta (jun 2026)
 - Dashboard: stats + buscador + orden + editar (cliente/fecha). Auto XMP: envío directo a
   Lightroom (getPhotos → /api/lr/push) + resumen de escenas. Estilos: buscador. Aprendizaje:

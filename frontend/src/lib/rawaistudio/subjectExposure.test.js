@@ -53,3 +53,23 @@ describe("Exposición orientada al sujeto (personas mejor expuestas)", () => {
     );
   });
 });
+
+describe("Contraluz extremo (sol/ventana detrás): exponer para la cara", () => {
+  // Fondo quemado (p99=255, highClip alto) y cara oscura (subj=70).
+  const backlit = {
+    p1: 5, p5: 15, p50: 60, p95: 250, p99: 255,
+    cP50: 150, lowClip: 0.02, highClip: 0.15, contrastIndex: 120, scene: "backlit",
+  };
+
+  test("cara oscura en contraluz: sube exposición con fuerza (no la recorta el fondo)", () => {
+    const r = computeBasic(backlit, "balanced", 150, 70, { subjectTarget: true });
+    expect(r.exposure).toBeGreaterThan(0.4);
+    expect(r.highlights).toBeLessThan(0); // recupera el fondo quemado
+  });
+
+  test("subject-target contraluz levanta MUCHO más que la ruta clásica (que se recorta)", () => {
+    const withTarget = computeBasic(backlit, "balanced", 150, 70, { subjectTarget: true });
+    const classic = computeBasic(backlit, "balanced", 150, 70); // se recorta por highClip + p99
+    expect(withTarget.exposure).toBeGreaterThan(classic.exposure + 0.2);
+  });
+});

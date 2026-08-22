@@ -209,6 +209,10 @@ function evalPhoto(p, subjects, trackingUncertain) {
   const mains = subjects.filter((s) => s.isMain);
   const closed = subjects.filter((s) => s.eyeState === "closed");
   const partial = subjects.filter((s) => s.eyeState === "partial");
+  // Tolerancia de PARPADEO en grupos grandes: 1 ojo cerrado por cada 8 personas.
+  // Grupos pequeños (≤7) → tolerancia 0 = comportamiento estricto de siempre.
+  const peopleCount = subjects.filter((s) => s.faceDetected).length;
+  const eyeTolerance = Math.floor(peopleCount / 8);
   const occluded = subjects.filter((s) => s.faceDetected && s.visibility < VIS_LOW);
   const missing = subjects.filter((s) => !s.faceDetected);
 
@@ -242,17 +246,18 @@ function evalPhoto(p, subjects, trackingUncertain) {
   }
 
   const score = hasPeople ? Math.round(0.45 * technicalScore + 0.55 * faceScore) : technicalScore;
-  const allMainOpen = mains.length > 0 && mains.every((s) => s.eyeState === "open");
+  const mainsNotOpen = mains.filter((s) => s.eyeState !== "open").length;
+  const allMainOpen = mains.length > 0 && mainsNotOpen <= eyeTolerance;
 
   // Warnings intrínsecos de la foto (los de selección se añaden al decidir).
   const warningTypes = [];
-  if (closed.length) warningTypes.push(WARNING.CLOSED_EYES);
-  if (partial.length) warningTypes.push(WARNING.PARTIAL_BLINK);
+  if (closed.length > eyeTolerance) warningTypes.push(WARNING.CLOSED_EYES);
+  if (partial.length > eyeTolerance) warningTypes.push(WARNING.PARTIAL_BLINK);
   if (sharpnessScore < LOW_SHARP) warningTypes.push(WARNING.LOW_SHARPNESS);
   if (!exposureOk) warningTypes.push(WARNING.EXPOSURE);
   if (occluded.length) warningTypes.push(WARNING.FACE_OCCLUDED);
   if (missing.length) warningTypes.push(WARNING.MISSING_SUBJECT);
-  const faceIssues = closed.length + partial.length + occluded.length + missing.length;
+  const faceIssues = Math.max(0, closed.length - eyeTolerance) + Math.max(0, partial.length - eyeTolerance) + occluded.length + missing.length;
   if (faceIssues >= 2) warningTypes.push(WARNING.MULTIPLE_FACE_ISSUES);
   if (hasPeople && trackingUncertain) warningTypes.push(WARNING.SUBJECT_TRACKING_UNCERTAIN);
 

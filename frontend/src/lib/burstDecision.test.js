@@ -70,6 +70,19 @@ test("eyeState clasifica open/partial/closed y unknown por baja confianza", () =
 });
 
 // --- Regla dura de ojos --------------------------------------------------
+test("grupo GRANDE: 1 parpadeo se tolera (no marca ojos cerrados y gana a otra con más parpadeos)", () => {
+  const row = (closedIdx) => Array.from({ length: 10 }, (_, i) =>
+    face(0.05 + i * 0.095, closedIdx.includes(i) ? 0.10 : 0.30, { area: 0.03 }));
+  const A = row([3]);        // 1 cerrado de 10 → tolerado (floor(10/8)=1)
+  const B = row([2, 4, 7]);  // 3 cerrados
+  const res = decideSequence([photo("A", 0.8, A), photo("B", 0.8, B)]);
+  expect(res.selectedPhoto).toBe("A");
+  const ra = res.photos.find((p) => p.id === "A");
+  expect(ra.warningTypes).not.toContain(WARNING.CLOSED_EYES); // parpadeo tolerado en grupo grande
+  expect(ra.warning).toBe(false);
+  expect(res.photos.find((p) => p.id === "B").selected).toBe(false);
+});
+
 test("ojos cerrados pierden ante una alternativa con ojos abiertos", () => {
   const res = decideSequence([
     photo("A", 0.8, [face(0.5, 0.10)]), // cerrados

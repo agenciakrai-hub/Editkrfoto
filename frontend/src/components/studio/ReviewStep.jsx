@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, Star, Plus, X, Sparkles, Hand, AlertTriangle } from "lucide-react";
+import { ArrowRight, Star, Plus, X, Sparkles, Hand, AlertTriangle, Layers, Check, Eye } from "lucide-react";
 import Thumbnail from "@/components/studio/Thumbnail";
 import PhotoViewer from "@/components/studio/PhotoViewer";
 import { WARNING_LABELS } from "@/lib/burstDecision";
@@ -22,11 +22,39 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
   const warnings = useMemo(() => photos.filter((p) => p.selectedForEdit && p.warning), [photos]);
   const list = tab === "selected" ? selected : (tab === "warnings" ? warnings : unselected);
 
+  // Ráfagas: agrupa por secuencia (burstId) y deja solo las que tienen >1 toma para comparar.
+  const bursts = useMemo(() => {
+    const groups = new Map();
+    for (const p of photos) {
+      const k = p.burstId ?? p.name;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(p);
+    }
+    return Array.from(groups.entries())
+      .filter(([, g]) => g.length > 1)
+      .map(([k, g]) => ({
+        id: k,
+        photos: [...g].sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true })),
+      }))
+      .sort((a, b) => Number(a.id) - Number(b.id));
+  }, [photos]);
+
   const applyToggle = (id) => {
     const next = photos.map((p) => (p.id === id ? { ...p, selectedForEdit: !p.selectedForEdit, source: "manual" } : p));
     setPhotos(next);
     onChange && onChange(next); // persistencia inmediata (decisión manual)
     return next;
+  };
+
+  // Comparador de ráfaga: elegir UNA toma con un clic → se selecciona esa y se descartan sus hermanas.
+  const chooseExclusive = (photo) => {
+    const bk = photo.burstId ?? photo.name;
+    const next = photos.map((p) =>
+      ((p.burstId ?? p.name) === bk)
+        ? { ...p, selectedForEdit: p.id === photo.id, source: "manual" }
+        : p);
+    setPhotos(next);
+    onChange && onChange(next);
   };
 
   const openViewer = (photo) => {
@@ -106,8 +134,67 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
           className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === "warnings" ? "border-amber-400/50 bg-amber-400/10 text-amber-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
           <AlertTriangle className="h-3.5 w-3.5" /> Con advertencia ({warnings.length})
         </button>
+        {bursts.length > 0 && (
+          <button data-testid="tab-bursts" onClick={() => setTab("bursts")}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${tab === "bursts" ? "border-sky-400/50 bg-sky-400/10 text-sky-300" : "border-zinc-700 bg-[#1c1c22] text-zinc-300 hover:border-zinc-600"}`}>
+            <Layers className="h-3.5 w-3.5" /> Por ráfaga ({bursts.length})
+          </button>
+        )}
       </div>
 
+      {tab === "bursts" ? (
+        <div className="mt-4 space-y-4" data-testid="bursts-view">
+          <p className="text-sm text-zinc-500">
+            Compara las tomas de cada secuencia y elige la definitiva con un clic. La elegida recibe 5★ + verde;
+            las demás de esa ráfaga quedan descartadas.
+          </p>
+          {bursts.map((b, bi) => (
+            <div key={b.id} data-testid={`burst-${b.id}`} className="rounded-xl border border-zinc-800 bg-[#141418] p-4">
+              <p className="mb-3 font-mono text-xs uppercase tracking-wider text-zinc-500">
+                Secuencia {bi + 1} · {b.photos.length} tomas
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {b.photos.map((p) => (
+                  <button key={p.id} data-testid={`burst-pick-${p.name}`} onClick={() => chooseExclusive(p)}
+                    className={`group overflow-hidden rounded-lg border text-left transition-all ${p.selectedForEdit ? "border-emerald-400 ring-1 ring-emerald-400/50" : "border-zinc-800 hover:border-zinc-600"}`}>
+                    <div className="relative aspect-[3/2] w-full">
+                      <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
+                      {p.selectedForEdit ? (
+                        <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-emerald-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-950" data-testid={`burst-chosen-${p.name}`}>
+                          <Check className="h-3 w-3" /> Elegida
+                        </span>
+                      ) : (
+                        <span className="absolute right-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-zinc-300 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+                          Elegir esta
+                        </span>
+                      )}
+                      {p.warning && (
+                        <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-amber-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950">
+                          <AlertTriangle className="h-3 w-3" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-1 px-2 py-1.5">
+                      <span className="truncate font-mono text-[10px] text-zinc-400">{p.name}</span>
+                      {p.audit && (
+                        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-zinc-500">
+                          <span className="inline-flex items-center gap-0.5" title="Nitidez de cara">
+                            <Sparkles className="h-2.5 w-2.5 text-sky-400" />{p.audit.sharpnessScore ?? "–"}
+                          </span>
+                          <span className="inline-flex items-center gap-0.5" title="Ojos">
+                            <Eye className="h-2.5 w-2.5 text-emerald-400" />{p.audit.eyesScore ?? "–"}
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {list.map((p) => <Card key={p.id} p={p} />)}
       </div>
@@ -117,6 +204,8 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
             : tab === "warnings" ? "Ninguna selección tiene advertencias. ¡Todo limpio!"
             : "No hay fotos descartadas."}
         </p>
+      )}
+        </>
       )}
 
       <button data-testid="review-continue-btn" disabled={!selected.length}
