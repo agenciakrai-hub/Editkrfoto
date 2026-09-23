@@ -1,8 +1,11 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, Star, Plus, X, Sparkles, Hand, AlertTriangle, Layers, Check, Eye } from "lucide-react";
+import { toast } from "sonner";
+import { ArrowRight, Star, Plus, X, Sparkles, Hand, AlertTriangle, Layers, Check, Eye, Wand2, Loader2 } from "lucide-react";
 import Thumbnail from "@/components/studio/Thumbnail";
 import PhotoViewer from "@/components/studio/PhotoViewer";
 import { WARNING_LABELS } from "@/lib/burstDecision";
+import { thumbBase64 } from "@/lib/rawThumb";
+import api from "@/lib/api";
 
 function Stars() {
   return (
@@ -47,14 +50,49 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
   };
 
   // Comparador de ráfaga: elegir UNA toma con un clic → se selecciona esa y se descartan sus hermanas.
-  const chooseExclusive = (photo) => {
+  const chooseExclusive = (photo, source = "manual") => {
     const bk = photo.burstId ?? photo.name;
     const next = photos.map((p) =>
       ((p.burstId ?? p.name) === bk)
-        ? { ...p, selectedForEdit: p.id === photo.id, source: "manual" }
+        ? { ...p, selectedForEdit: p.id === photo.id, source }
         : p);
     setPhotos(next);
     onChange && onChange(next);
+  };
+
+  const [aiBusy, setAiBusy] = useState(null);   // burstId en proceso ("all" = todas)
+  const [aiReason, setAiReason] = useState({});  // burstId → { filename, reason }
+
+  const refineBurst = async (b, silent = false) => {
+    setAiBusy((prev) => (prev === "all" ? "all" : b.id));
+    try {
+      const cands = [];
+      for (const p of b.photos.slice(0, 8)) {
+        const img = await thumbBase64(p.file, 384);
+        if (img) cands.push({ filename: p.name, image_base64: img });
+      }
+      if (cands.length < 2) { if (!silent) toast.error("No hay suficientes miniaturas para comparar"); return; }
+      const r = await api.post("/ai/select-burst", { candidates: cands, context: "reportaje de boda" });
+      const best = b.photos.find((p) => p.name === r.data.best_filename);
+      if (best) {
+        chooseExclusive(best, "ai");
+        setAiReason((m) => ({ ...m, [b.id]: { filename: best.name, reason: r.data.reason } }));
+        if (!silent) toast.success(`IA eligió ${best.name}`, { description: r.data.reason });
+      }
+    } catch (err) {
+      if (!silent) toast.error(err?.response?.status === 402 ? "Tu prueba ha terminado" : "La IA no pudo analizar la ráfaga");
+    } finally {
+      if (!silent) setAiBusy(null);
+    }
+  };
+
+  const refineAll = async () => {
+    setAiBusy("all");
+    const t = toast.loading(`Afinando ${bursts.length} ráfagas con IA…`);
+    let done = 0;
+    for (const b of bursts) { await refineBurst(b, true); done++; toast.loading(`Afinando ráfagas con IA… ${done}/${bursts.length}`, { id: t }); }
+    toast.success(`IA afinó ${done} ráfagas`, { id: t });
+    setAiBusy(null);
   };
 
   const openViewer = (photo) => {
@@ -144,15 +182,31 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
 
       {tab === "bursts" ? (
         <div className="mt-4 space-y-4" data-testid="bursts-view">
-          <p className="text-sm text-zinc-500">
-            Compara las tomas de cada secuencia y elige la definitiva con un clic. La elegida recibe 5★ + verde;
-            las demás de esa ráfaga quedan descartadas.
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-zinc-500">
+              Compara las tomas de cada secuencia y elige la definitiva con un clic, o deja que la IA la elija por ti.
+            </p>
+            <button data-testid="ai-refine-all-btn" onClick={refineAll} disabled={!!aiBusy}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-sky-500 px-4 py-1.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50">
+              {aiBusy === "all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Afinar todas con IA
+            </button>
+          </div>
           {bursts.map((b, bi) => (
             <div key={b.id} data-testid={`burst-${b.id}`} className="rounded-xl border border-zinc-800 bg-[#141418] p-4">
-              <p className="mb-3 font-mono text-xs uppercase tracking-wider text-zinc-500">
-                Secuencia {bi + 1} · {b.photos.length} tomas
-              </p>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">
+                  Secuencia {bi + 1} · {b.photos.length} tomas
+                </p>
+                <button data-testid={`ai-refine-${b.id}`} onClick={() => refineBurst(b)} disabled={!!aiBusy}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/40 bg-violet-400/10 px-3 py-1 text-xs font-medium text-violet-200 hover:bg-violet-400/20 disabled:opacity-50">
+                  {aiBusy === b.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />} Elegir con IA
+                </button>
+              </div>
+              {aiReason[b.id] && (
+                <p className="mb-3 flex items-start gap-2 rounded-lg border border-violet-400/20 bg-violet-400/5 px-3 py-2 text-xs text-violet-200" data-testid={`ai-reason-${b.id}`}>
+                  <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" /> <span><b>{aiReason[b.id].filename}</b> — {aiReason[b.id].reason}</span>
+                </p>
+              )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {b.photos.map((p) => (
                   <button key={p.id} data-testid={`burst-pick-${p.name}`} onClick={() => chooseExclusive(p)}

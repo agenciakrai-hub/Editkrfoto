@@ -8,6 +8,7 @@ import os
 import io
 import re
 import base64
+import json
 import hashlib
 import asyncio
 import zipfile
@@ -2005,6 +2006,66 @@ async def ai_vision(body: VisionBody, user: User = Depends(require_access)):
                    system_message="Eres un asistente experto en fotografía de bodas. Responde conciso.").with_model(prov, model)
     text = await chat.send_message(UserMessage(text=body.prompt, file_contents=[ImageContent(image_base64=b64)]))
     return {"provider": "Emergent IA", "model": model, "text": text}
+
+
+async def _ai_multi_vision(task: str, system: str, prompt: str, images_b64: list, model: Optional[str] = None) -> str:
+    cfg = await db.ai_config.find_one({"id": "singleton"}) or {}
+    active = cfg.get(task, "emergent")
+    imgs = [re.sub(r"^data:image/[a-z+]+;base64,", "", b) for b in images_b64 if b]
+    if active and active.startswith("custom:"):
+        rec = await db.ai_providers.find_one({"id": active.split(":", 1)[1]})
+        if rec and rec.get("api_key"):
+            m = model or (rec.get(f"{task}_models") or rec.get("available_models") or ["gpt-4o"])[0]
+            content = [{"type": "text", "text": prompt}] + [
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b}"}} for b in imgs]
+            r = requests.post(f"{rec['endpoint']}/chat/completions",
+                headers={"Authorization": f"Bearer {rec['api_key']}", "Content-Type": "application/json"},
+                json={"model": m, "max_tokens": 500, "messages": [
+                    {"role": "system", "content": system}, {"role": "user", "content": content}]},
+                timeout=90)
+            return r.json()["choices"][0]["message"]["content"]
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    prov, m = ("openai", model or "gpt-5.4")
+    if m.startswith("claude"): prov = "anthropic"
+    elif m.startswith("gemini"): prov = "gemini"
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"sel-{uuid.uuid4().hex[:8]}",
+                   system_message=system).with_model(prov, m)
+    return await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=b) for b in imgs]))
+
+
+class BurstCandidate(BaseModel):
+    filename: str
+    image_base64: str
+
+class BurstSelectBody(BaseModel):
+    candidates: List[BurstCandidate]
+    context: Optional[str] = None
+
+@api_router.post("/ai/select-burst")
+async def ai_select_burst(body: BurstSelectBody, user: User = Depends(require_access)):
+    """La IA de visión elige la mejor toma de una ráfaga (ojos abiertos, foco en la cara, expresión)."""
+    cand = body.candidates[:8]
+    if len(cand) < 2:
+        raise HTTPException(status_code=400, detail="Se necesitan al menos 2 tomas")
+    listing = "\n".join(f"{i+1}. {c.filename}" for i, c in enumerate(cand))
+    system = ("Eres un editor profesional de fotografía de bodas experto en 'culling'. "
+              "Comparas tomas casi idénticas de una ráfaga y eliges la mejor.")
+    prompt = (f"Estas son {len(cand)} tomas de la MISMA ráfaga, en este orden:\n{listing}\n\n"
+              + (f"Contexto: {body.context}\n\n" if body.context else "")
+              + "Elige la MEJOR priorizando: ojos abiertos (sin parpadeos), foco nítido en la cara, "
+              "mejor expresión y postura, y ausencia de defectos. Responde SOLO con JSON válido: "
+              '{"best": <número 1..N>, "reason": "<motivo breve en español>"}.')
+    raw = await _ai_multi_vision("seleccion", system, prompt, [c.image_base64 for c in cand])
+    m = re.search(r"\{.*\}", raw or "", re.S)
+    try:
+        data = json.loads(m.group(0)) if m else {}
+    except Exception:
+        data = {}
+    idx = int(data.get("best", 1))
+    idx = max(1, min(len(cand), idx))
+    return {"best_filename": cand[idx - 1].filename, "index": idx,
+            "reason": (data.get("reason") or "").strip()[:280], "raw": (raw or "")[:400]}
+
 
 
 app.include_router(api_router)

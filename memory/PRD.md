@@ -106,6 +106,16 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   devuelve texto sobre imagen real). Editor: la IA corrige básicos + preset aporta el resto (arquitectura ya existente).
 - PENDIENTE Fase 1b: enchufar Selección IA al gateway. Luego Fase 2 Editor, Fase 3 Álbum AI.
 
+## Fase 1b — Selección IA con visión — HECHO (sep 2026)
+- Backend `/api/ai/select-burst`: recibe candidatos [{filename, image_base64}] (miniaturas), la IA de
+  visión activa (Emergent por defecto) elige la mejor toma (ojos abiertos, foco en cara, expresión) y
+  devuelve {best_filename, index, reason}. Helper `_ai_multi_vision` (multi-imagen, Emergent o custom).
+  Probado: descarta subexpuesta/lavada y elige la buena con motivo en español.
+- Frontend `rawThumb.thumbBase64(file, maxW)` genera miniatura JPEG base64 ligera (coste bajo).
+  `ReviewStep` pestaña "Por ráfaga": botón "Elegir con IA" por ráfaga + "Afinar todas con IA" (con
+  progreso). Aplica la elección (source="ai") y muestra el motivo. Requiere RAW reales para test en navegador.
+- SIGUIENTE: Fase 2 Editor visual (IA fija básicos + preset el resto), Fase 3 Álbum AI.
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.

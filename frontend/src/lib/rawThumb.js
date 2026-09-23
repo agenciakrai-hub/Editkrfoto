@@ -80,3 +80,27 @@ export async function extractPreview(file) {
 export async function extractPreviewBlob(file) {
   return (await extractPreview(file)).blob;
 }
+
+// Miniatura base64 (JPEG) reescalada a maxW px, orientada. Para enviar a la IA (payload ligero).
+export async function thumbBase64(file, maxW = 384) {
+  const { blob, orientation } = await extractPreview(file);
+  if (!blob) return null;
+  try {
+    let bmp = await createImageBitmap(blob, { imageOrientation: "none" });
+    let canvas = (orientation && orientation !== 1) ? orientToCanvas(bmp, orientation) : (() => {
+      const c = document.createElement("canvas"); c.width = bmp.width; c.height = bmp.height;
+      c.getContext("2d").drawImage(bmp, 0, 0); return c;
+    })();
+    if (bmp.close) bmp.close();
+    const scale = Math.min(1, maxW / canvas.width);
+    if (scale < 1) {
+      const out = document.createElement("canvas");
+      out.width = Math.round(canvas.width * scale); out.height = Math.round(canvas.height * scale);
+      out.getContext("2d").drawImage(canvas, 0, 0, out.width, out.height);
+      canvas = out;
+    }
+    return canvas.toDataURL("image/jpeg", 0.8).replace(/^data:image\/jpeg;base64,/, "");
+  } catch {
+    return null;
+  }
+}
