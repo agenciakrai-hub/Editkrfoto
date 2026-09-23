@@ -44,6 +44,29 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   DoS por falta de límites en generación de ZIP.
 - P4: Perfiles "Adobe Neutro" y "Adaptables" (requiere XMP del usuario para extraer UUIDs).
 
+## Carpetas dentro de proyecto (sep 2026)
+- Colección `project_folders` (id, project_id, user_id, name, raw_folder_path, total/processed_images,
+  status, rawai_state, order). Cada carpeta tiene su propio culling/edición/XMP (rawai_state propio).
+- Backend: GET/POST `/api/projects/{pid}/folders`, GET/PUT/DELETE `/api/folders/{fid}`,
+  PATCH `/api/folders/{fid}/state`, GET `/api/folders/{fid}/final-selection`. Borrado de proyecto
+  elimina sus carpetas en cascada.
+- Frontend: nueva página `ProjectDetail` (`/project/:projectId`) gestor de carpetas (crear/renombrar/
+  borrar + accesos rápidos: Preparativos/Ceremonia/Sesión pareja/Banquete/Fiesta). Dashboard abre
+  `/project/:id`. `Studio` es folder-aware (`?folder=`): carga/guarda estado por carpeta; generate-xmp/
+  lr-push/cloud-jobs siguen scopeados por proyecto. Verificado E2E (curl + screenshots).
+
+## Stripe / Suscripciones (sep 2026) — BACKEND LISTO, UI DE PRECIOS PENDIENTE (aparcado por el usuario)
+- Sandbox Stripe Flow A (país ES, modo gestionado/SMP). Catálogo `setup_stripe.py`: producto
+  "RAW AI Studio Pro" con 4 precios: pro_monthly_eur (40€), pro_annual_eur (300€), pro_monthly_usd
+  (44$), pro_annual_usd (324$). Prueba 15 días (TRIAL_DAYS), registro ABIERTO (ALLOWED_EMAILS=""),
+  OWNER_EMAIL con acceso permanente.
+- Backend: `/api/subscription/plans`, `/api/subscription/me`, `/api/payments/checkout`,
+  `/api/payments/status/{sid}`, `/api/stripe/webhook`. Gating `require_access` (402) en endpoints de
+  valor (create_project, create_folder, lr-push, generate-xmp, cloud-jobs, analyze-selection).
+  payment_transactions + user.subscription_* en Mongo.
+- FALTA: página de precios en el frontend + probar checkout E2E. El usuario pidió "construir la app
+  primero, precios después".
+
 ## Motor: precisión de análisis (jun 2026)
 - **Exposición orientada al sujeto** (`exposureEngine.computeBasic` + `basicEngine.computeAiBasics`):
   cuando hay una cara con peso real (faceWeight ≥ 0.25), la exposición apunta a la

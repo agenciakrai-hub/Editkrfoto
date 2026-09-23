@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import AuthCallback from "@/pages/AuthCallback";
 import Login from "@/pages/Login";
 import Dashboard from "@/pages/Dashboard";
+import ProjectDetail from "@/pages/ProjectDetail";
 import Studio from "@/pages/Studio";
 import ProcessingPage from "@/pages/ProcessingPage";
 import ProfileExtractor from "@/pages/ProfileExtractor";
@@ -36,6 +37,7 @@ function AppRouter() {
     <Routes>
       <Route path="/" element={<Login />} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+      <Route path="/project/:projectId" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>} />
       <Route path="/studio" element={<ProtectedRoute><Studio /></ProtectedRoute>} />
       <Route path="/processing" element={<ProtectedRoute><ProcessingPage /></ProtectedRoute>} />
       <Route path="/profiles" element={<ProtectedRoute><ProfileExtractor /></ProtectedRoute>} />

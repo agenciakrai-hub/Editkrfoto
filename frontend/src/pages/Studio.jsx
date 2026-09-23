@@ -20,9 +20,12 @@ const STEP_INDEX = { folder: 0, selection: 1, review: 2, style: 3, mode: 4, proc
 export default function Studio() {
   const [params] = useSearchParams();
   const projectId = params.get("project");
+  const folderId = params.get("folder");
+  const stateUrl = folderId ? `/folders/${folderId}` : `/projects/${projectId}`;
   const navigate = useNavigate();
 
-  const [project, setProject] = useState(null);
+  const [project, setProject] = useState(null);   // entidad de trabajo (carpeta si hay folder, si no el proyecto)
+  const [projectName, setProjectName] = useState("");
   const [step, setStep] = useState("folder");
   const [files, setFiles] = useState([]);
   const [photos, setPhotos] = useState([]);
@@ -34,16 +37,27 @@ export default function Studio() {
 
   useEffect(() => {
     if (!projectId) { navigate("/dashboard"); return; }
-    api.get(`/projects/${projectId}`).then((r) => {
-      // Si ya hay un trabajo en la nube en curso o terminado, el estado oficial vive en Procesamiento.
-      if (r.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}`); return; }
-      setProject(r.data);
-    }).catch(() => navigate("/dashboard"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- carga el proyecto al abrir/ cambiar de id
-  }, [projectId, navigate]);
+    const loadEntity = async () => {
+      try {
+        if (folderId) {
+          const [f, p] = await Promise.all([api.get(`/folders/${folderId}`), api.get(`/projects/${projectId}`)]);
+          setProjectName(p.data.name);
+          if (f.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}&folder=${folderId}`); return; }
+          setProject(f.data);
+        } else {
+          const r = await api.get(`/projects/${projectId}`);
+          setProjectName(r.data.name);
+          if (r.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}`); return; }
+          setProject(r.data);
+        }
+      } catch { navigate("/dashboard"); }
+    };
+    loadEntity();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, folderId, navigate]);
 
   const persist = async (patch) => {
-    try { await api.patch(`/projects/${projectId}/state`, patch); }
+    try { await api.patch(`${stateUrl}/state`, patch); }
     catch (err) {
       if (process.env.NODE_ENV === "development") console.warn("No se pudo guardar el checkpoint de estado", err);
     }
@@ -139,7 +153,7 @@ export default function Studio() {
 
   return (
     <AppShell>
-      <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">RAW AI Studio</p>
+      <p className="font-mono text-xs uppercase tracking-widest text-zinc-500">RAW AI Studio{projectName ? ` · ${projectName}` : ""}</p>
       <h1 className="font-display mt-1 text-2xl font-semibold">{project.name}</h1>
       <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-500">
         Del proyecto al ZIP final: importa la carpeta, deja que la IA agrupe ráfagas y marque las mejores
@@ -152,7 +166,7 @@ export default function Studio() {
         {step === "folder" && (
           <FolderSelectStep onContinue={async (f, folderName) => {
             setFiles(f);
-            await api.put(`/projects/${projectId}`, { raw_folder_path: folderName, total_images: f.length, status: "processing" });
+            await api.put(`${stateUrl}`, { raw_folder_path: folderName, total_images: f.length, status: "processing" });
             setProject((p) => ({ ...p, raw_folder_path: folderName, total_images: f.length }));
             // Reanudar selección: si el proyecto ya tenía una selección guardada por nombre de archivo,
             // la restauramos sobre la carpeta recién elegida en lugar de volver a analizar con IA.
@@ -231,7 +245,7 @@ export default function Studio() {
         {step === "processing" && (
           <ProcessingStep count={sendPhotos.length} onDone={async (r) => {
             setResult(r);
-            await api.put(`/projects/${projectId}`, { status: "completed", processed_images: r.succeeded });
+            await api.put(`${stateUrl}`, { status: "completed", processed_images: r.succeeded });
             toast.success("Procesamiento completado", { description: `${r.succeeded} fotos listas` });
             setStep("report");
           }} />
@@ -239,7 +253,7 @@ export default function Studio() {
 
         {step === "report" && result && (
           <ReportStep report={result} projectId={projectId} payload={xmpPayload} files={sendPhotos}
-            audit={auditByFile} onRestart={() => navigate("/dashboard")} />
+            audit={auditByFile} onRestart={() => navigate(folderId ? `/project/${projectId}` : "/dashboard")} />
         )}
       </div>
     </AppShell>

@@ -126,6 +126,34 @@ class ProjectUpdate(BaseModel):
     rawai_state: Optional[Dict[str, Any]] = None
 
 
+class ProjectFolder(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    project_id: str
+    user_id: str
+    name: str
+    raw_folder_path: Optional[str] = None
+    total_images: int = 0
+    processed_images: int = 0
+    status: str = "created"  # created | processing | completed
+    rawai_state: Dict[str, Any] = Field(default_factory=dict)
+    order: int = 0
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class FolderCreate(BaseModel):
+    name: str
+
+
+class FolderUpdate(BaseModel):
+    name: Optional[str] = None
+    raw_folder_path: Optional[str] = None
+    total_images: Optional[int] = None
+    processed_images: Optional[int] = None
+    status: Optional[str] = None
+
+
+
 class PhotoBasic(BaseModel):
     filename: str
     basic: Dict[str, float] = Field(default_factory=dict)     # compat (6 básicos v2)
@@ -544,6 +572,77 @@ async def delete_project(project_id: str, user: User = Depends(get_current_user)
     res = await db.projects.delete_one({"id": project_id, "user_id": user.user_id})
     if res.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    await db.project_folders.delete_many({"project_id": project_id, "user_id": user.user_id})
+    return {"ok": True}
+
+
+# ----------------------------- Folder routes (carpetas dentro del proyecto) -----------------------------
+async def _get_folder_or_404(folder_id: str, user: User) -> dict:
+    doc = await db.project_folders.find_one({"id": folder_id, "user_id": user.user_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Carpeta no encontrada")
+    return doc
+
+
+@api_router.get("/projects/{project_id}/folders", response_model=List[ProjectFolder])
+async def list_folders(project_id: str, user: User = Depends(get_current_user)):
+    docs = await db.project_folders.find(
+        {"project_id": project_id, "user_id": user.user_id}, {"_id": 0}
+    ).sort("order", 1).to_list(500)
+    return [ProjectFolder(**d) for d in docs]
+
+
+@api_router.post("/projects/{project_id}/folders", response_model=ProjectFolder)
+async def create_folder(project_id: str, payload: FolderCreate, user: User = Depends(require_access)):
+    project = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    count = await db.project_folders.count_documents({"project_id": project_id, "user_id": user.user_id})
+    folder = ProjectFolder(project_id=project_id, user_id=user.user_id, name=payload.name, order=count)
+    await db.project_folders.insert_one(folder.model_dump())
+    return folder
+
+
+@api_router.get("/folders/{folder_id}", response_model=ProjectFolder)
+async def get_folder(folder_id: str, user: User = Depends(get_current_user)):
+    return ProjectFolder(**await _get_folder_or_404(folder_id, user))
+
+
+@api_router.put("/folders/{folder_id}", response_model=ProjectFolder)
+async def update_folder(folder_id: str, payload: FolderUpdate, user: User = Depends(get_current_user)):
+    await _get_folder_or_404(folder_id, user)
+    patch = {k: v for k, v in payload.model_dump().items() if v is not None}
+    patch["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.project_folders.update_one({"id": folder_id}, {"$set": patch})
+    return ProjectFolder(**await _get_folder_or_404(folder_id, user))
+
+
+@api_router.patch("/folders/{folder_id}/state", response_model=ProjectFolder)
+async def merge_folder_state(folder_id: str, patch: Dict[str, Any], user: User = Depends(get_current_user)):
+    doc = await _get_folder_or_404(folder_id, user)
+    state = doc.get("rawai_state", {}) or {}
+    state.update(patch)
+    await db.project_folders.update_one({"id": folder_id}, {"$set": {
+        "rawai_state": state, "updated_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    return ProjectFolder(**await _get_folder_or_404(folder_id, user))
+
+
+@api_router.get("/folders/{folder_id}/final-selection")
+async def get_folder_final_selection(folder_id: str, user: User = Depends(get_current_user)):
+    doc = await _get_folder_or_404(folder_id, user)
+    state = doc.get("rawai_state", {}) or {}
+    items = [x for x in (state.get("finalSelection") or []) if isinstance(x, dict)]
+    selected = [x for x in items if x.get("selected")]
+    return {"folder_id": folder_id, "total": len(items), "selected_count": len(selected),
+            "items": items, "selected": selected}
+
+
+@api_router.delete("/folders/{folder_id}")
+async def delete_folder(folder_id: str, user: User = Depends(get_current_user)):
+    res = await db.project_folders.delete_one({"id": folder_id, "user_id": user.user_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Carpeta no encontrada")
     return {"ok": True}
 
 

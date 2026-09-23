@@ -55,7 +55,7 @@ export default function Dashboard() {
       } else {
         const res = await api.post("/projects", form);
         toast.success("Proyecto creado");
-        navigate(`/studio?project=${res.data.id}`);
+        navigate(`/project/${res.data.id}`);
       }
     } catch {
       toast.error(editId ? "No se pudo actualizar" : "No se pudo crear el proyecto");
@@ -155,7 +155,7 @@ export default function Dashboard() {
             const st = STATUS[p.status] || STATUS.created;
             const pct = p.total_images ? Math.round((p.processed_images / p.total_images) * 100) : (p.status === "completed" ? 100 : 0);
             return (
-              <div key={p.id} data-testid={`project-card-${p.id}`} onClick={() => navigate(`/studio?project=${p.id}`)}
+              <div key={p.id} data-testid={`project-card-${p.id}`} onClick={() => navigate(`/project/${p.id}`)}
                 className="group cursor-pointer rounded-xl border border-zinc-800 bg-[#141418] p-5 transition-all duration-200 hover:border-zinc-600 hover:shadow-lg">
                 <div className="flex items-start justify-between">
                   <span className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${st.cls}`}>{st.label}</span>
@@ -180,7 +180,7 @@ export default function Dashboard() {
                   <div className="h-full rounded-full bg-white transition-all duration-500" style={{ width: `${pct}%` }} />
                 </div>
                 <div className="mt-4 flex items-center gap-1.5 text-sm font-medium text-emerald-400 opacity-0 transition-opacity group-hover:opacity-100">
-                  Abrir estudio <ArrowRight className="h-4 w-4" />
+                  Abrir proyecto <ArrowRight className="h-4 w-4" />
                 </div>
               </div>
             );
