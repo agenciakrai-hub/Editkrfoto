@@ -11,6 +11,9 @@ import { computeAiBasics, NEUTRAL_AI_BASICS } from "@/lib/rawaistudio/basicEngin
 import { buildStyleXmp } from "@/lib/xmp/buildXmp";
 import { embedXmpInDng } from "@/lib/dngXmp";
 import LightroomPlugin from "@/components/studio/LightroomPlugin";
+import PhotoEditor from "@/components/studio/PhotoEditor";
+import Thumbnail from "@/components/studio/Thumbnail";
+import { Pencil } from "lucide-react";
 
 const isDng = (name) => /\.dng$/i.test(name || "");
 
@@ -26,8 +29,10 @@ export default function AutoBasic() {
   const [profile, setProfile] = useState("Adobe Standard");
   const [phase, setPhase] = useState("idle"); // idle | analyzing | ready | zipping
   const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [edits, setEdits] = useState({});      // name → básicos editados a mano
+  const [editing, setEditing] = useState(null); // item en edición
 
-  const reset = () => { setItems([]); setFolderName(null); setPhase("idle"); setProgress({ done: 0, total: 0 }); };
+  const reset = () => { setItems([]); setFolderName(null); setPhase("idle"); setProgress({ done: 0, total: 0 }); setEdits({}); };
 
   const onPick = async (e) => {
     const all = Array.from(e.target.files || []);
@@ -53,9 +58,7 @@ export default function AutoBasic() {
       const zip = new JSZip();
       let embedded = 0, sidecars = 0;
       for (const it of items) {
-        const basic = it.photometrics
-          ? computeAiBasics({ photometrics: it.photometrics, color: it.color }, { mode, deadzone: "prudent", wbStrength: 0.5 }).aiBasicAdjustments
-          : NEUTRAL_AI_BASICS;
+        const basic = basicFor(it);
         const xmp = buildStyleXmp(it.name, basic, profile || "Adobe Standard");
         if (isDng(it.name) && it.file) {
           // DNG: Lightroom ignora el sidecar → escribimos el XMP DENTRO del .dng
@@ -84,10 +87,12 @@ export default function AutoBasic() {
   const busy = phase === "analyzing";
   const pct = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
 
-  // Construye los básicos de una foto (mismo motor que la exportación).
-  const basicFor = (it) => it.photometrics
-    ? computeAiBasics({ photometrics: it.photometrics, color: it.color }, { mode, deadzone: "prudent", wbStrength: 0.5 }).aiBasicAdjustments
-    : NEUTRAL_AI_BASICS;
+  // Construye los básicos de una foto: edición manual si existe, si no lo que calculó la IA.
+  const basicFor = (it) => edits[it.name]
+    ? edits[it.name]
+    : (it.photometrics
+      ? computeAiBasics({ photometrics: it.photometrics, color: it.color }, { mode, deadzone: "prudent", wbStrength: 0.5 }).aiBasicAdjustments
+      : NEUTRAL_AI_BASICS);
 
   // Para "Enviar a Lightroom": genera los XMP (sidecar) por nombre de archivo original.
   const buildPhotosForSync = () => items.map((it) => ({
@@ -192,11 +197,39 @@ export default function AutoBasic() {
               </div>
             </div>
           )}
+          <div className="mt-6 rounded-xl border border-zinc-800 bg-[#141418] p-5" data-testid="autobasic-grid">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-xs uppercase tracking-wider text-zinc-500">Fotos ({items.length}) · pulsa Editar para afinar</p>
+              {Object.keys(edits).length > 0 && <span className="text-xs text-emerald-400">{Object.keys(edits).length} editadas</span>}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+              {items.slice(0, 60).map((it) => (
+                <div key={it.name} data-testid={`grid-item-${it.name}`} className="group relative overflow-hidden rounded-lg border border-zinc-800">
+                  <div className="relative aspect-[3/2] w-full">
+                    <Thumbnail file={it.file} alt={it.name} className="aspect-[3/2] w-full" />
+                    {edits[it.name] && <span className="absolute left-1.5 top-1.5 rounded bg-emerald-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-950">Editada</span>}
+                    <button data-testid={`edit-photo-${it.name}`} onClick={() => setEditing(it)}
+                      className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-zinc-950"><Pencil className="h-3.5 w-3.5" /> Editar</span>
+                    </button>
+                  </div>
+                  <p className="truncate px-2 py-1 font-mono text-[10px] text-zinc-500">{it.name}</p>
+                </div>
+              ))}
+            </div>
+            {items.length > 60 && <p className="mt-2 text-xs text-zinc-600">Mostrando 60 de {items.length}. La exportación incluye todas.</p>}
+          </div>
           <LightroomPlugin
             getPhotos={buildPhotosForSync}
             title="Enviar a Lightroom (sincroniza solo)"
             subtitle="Envía los básicos de esta carpeta al plugin; en Lightroom selecciona las fotos y sincroniza." />
         </>
+      )}
+
+      {editing && (
+        <PhotoEditor item={editing} initial={basicFor(editing)} cameraProfile={profile || "Adobe Standard"}
+          onSave={(adj) => { setEdits((e) => ({ ...e, [editing.name]: adj })); setEditing(null); toast.success(`Ajustes guardados: ${editing.name}`); }}
+          onClose={() => setEditing(null)} />
       )}
 
       {phase === "idle" && (

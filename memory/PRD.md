@@ -116,6 +116,16 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   progreso). Aplica la elección (source="ai") y muestra el motivo. Requiere RAW reales para test en navegador.
 - SIGUIENTE: Fase 2 Editor visual (IA fija básicos + preset el resto), Fase 3 Álbum AI.
 
+## Fase 2 — Editor visual — HECHO (sep 2026)
+- `components/studio/PhotoEditor.jsx`: modal con vista previa (preview JPEG incrustado) + sliders de
+  básicos (exposición/contraste/luces/sombras/blancos/negros/temp/tinte/claridad/vibrance/saturación),
+  vista previa aproximada por filtros CSS + overlay de temperatura/tinte, botón "mantén para ver
+  original" (antes/después) y "IA" (reset a lo que fijó la IA).
+- Integrado en `AutoBasic`: grid de fotos con botón "Editar"; overrides en `edits{name→básicos}` que
+  se aplican en export ZIP y en "Enviar a Lightroom" (`basicFor` usa edición manual si existe).
+  La IA fija los básicos; el preset/perfil aporta el resto. Compila OK; flujo visual se prueba con RAW reales.
+- SIGUIENTE: Fase 3 Álbum AI (maquetación automática de spreads + export PDF).
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.
