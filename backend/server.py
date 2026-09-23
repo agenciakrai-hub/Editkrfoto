@@ -1847,7 +1847,168 @@ async def stripe_webhook(request: Request):
     return {"status": "ok"}
 
 
+# ----------------------------- Proveedores de IA (cerebro) -----------------------------
+# Emergent (gratis, por defecto) + proveedores propios OpenAI-compatibles (de pago).
+async def require_owner(user: User = Depends(get_current_user)) -> User:
+    if not (OWNER_EMAIL and (user.email or "").strip().lower() == OWNER_EMAIL):
+        raise HTTPException(status_code=403, detail="Solo el administrador puede gestionar proveedores de IA")
+    return user
+
+def _mask_key(k: str) -> str:
+    if not k: return ""
+    return "••••••" if len(k) <= 8 else f"{k[:4]}…{k[-4:]}"
+
+EMERGENT_PROVIDER = {
+    "id": "emergent", "name": "Emergent IA (gratis)", "builtin": True, "enabled": True,
+    "endpoint": "", "has_key": True, "masked_key": "incluida",
+    "available_models": ["gpt-5.4", "claude-sonnet-4-6", "gemini-3-flash-preview"],
+    "note": "Incluida sin configuración. Visión para selección y ajustes.",
+}
+AI_TASKS = ("seleccion", "ajustes", "album")
+
+def _fetch_models(endpoint: str, api_key: str):
+    try:
+        r = requests.get(f"{endpoint}/models", headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
+        if r.status_code != 200:
+            return False, [], f"HTTP {r.status_code}: {r.text[:160]}"
+        data = r.json()
+        raw = (data.get("data") or data.get("models") or [])[:500]
+        models = [str(m.get("id") or m.get("name") or "").replace("models/", "").strip() for m in raw]
+        models = [m for m in models if m]
+        if not models:
+            return False, [], "El proveedor no devolvió modelos"
+        return True, models, ""
+    except Exception as e:
+        return False, [], str(e)[:160]
+
+def _norm_endpoint(raw: str) -> str:
+    url = (raw or "").strip().rstrip("/")
+    if not re.match(r"^https?://.+", url, re.I):
+        raise HTTPException(status_code=400, detail="El endpoint debe empezar por http:// o https://")
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    if not p.path or p.path == "":
+        return f"{p.scheme}://{p.netloc}/v1"
+    return url
+
+def _mask_provider(r: dict) -> dict:
+    return {
+        "id": r["id"], "name": r.get("name", ""), "endpoint": r.get("endpoint", ""),
+        "builtin": False, "enabled": r.get("enabled", True),
+        "available_models": r.get("available_models", []),
+        "seleccion_models": r.get("seleccion_models", []),
+        "ajustes_models": r.get("ajustes_models", []),
+        "album_models": r.get("album_models", []),
+        "has_key": bool(r.get("api_key")), "masked_key": _mask_key(r.get("api_key", "")),
+        "last_ok": r.get("last_ok", False), "last_reason": r.get("last_reason", ""),
+    }
+
+@api_router.get("/ai/providers")
+async def ai_list_providers(user: User = Depends(require_owner)):
+    docs = await db.ai_providers.find({}, {"_id": 0}).to_list(100)
+    return {"builtin": EMERGENT_PROVIDER, "providers": [_mask_provider(d) for d in docs]}
+
+@api_router.post("/ai/providers")
+async def ai_add_provider(body: Dict[str, Any], user: User = Depends(require_owner)):
+    endpoint = _norm_endpoint(body.get("endpoint", ""))
+    api_key = str(body.get("api_key", "")).strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Falta la API key")
+    ok, models, reason = _fetch_models(endpoint, api_key)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"No se pudo verificar la conexión: {reason}")
+    from urllib.parse import urlparse
+    name = (body.get("name") or urlparse(endpoint).hostname.split(".")[0].capitalize())
+    rec = {"id": f"aip_{uuid.uuid4().hex[:12]}", "name": name, "endpoint": endpoint, "api_key": api_key,
+           "available_models": models, "seleccion_models": [], "ajustes_models": [], "album_models": [],
+           "enabled": True, "last_ok": True, "last_reason": "",
+           "created_at": _iso(datetime.now(timezone.utc))}
+    await db.ai_providers.insert_one(rec)
+    return {"ok": True, "provider": _mask_provider(rec), "total_models": len(models)}
+
+@api_router.put("/ai/providers/{pid}/models")
+async def ai_update_models(pid: str, body: Dict[str, Any], user: User = Depends(require_owner)):
+    clean = lambda v: [str(x).strip() for x in (v or []) if str(x).strip()]
+    patch = {f"{t}_models": clean(body.get(f"{t}_models")) for t in AI_TASKS}
+    res = await db.ai_providers.update_one({"id": pid}, {"$set": patch})
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    return {"ok": True}
+
+@api_router.post("/ai/providers/{pid}/retest")
+async def ai_retest(pid: str, user: User = Depends(require_owner)):
+    rec = await db.ai_providers.find_one({"id": pid})
+    if not rec:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    ok, models, reason = _fetch_models(rec["endpoint"], rec.get("api_key", ""))
+    patch = {"last_ok": ok, "last_reason": reason}
+    if ok:
+        patch["available_models"] = models
+    await db.ai_providers.update_one({"id": pid}, {"$set": patch})
+    return {"ok": ok, "reason": reason, "total_models": len(models)}
+
+@api_router.delete("/ai/providers/{pid}")
+async def ai_delete_provider(pid: str, user: User = Depends(require_owner)):
+    await db.ai_providers.delete_one({"id": pid})
+    cfg = await db.ai_config.find_one({"id": "singleton"})
+    if cfg:
+        patch = {t: "emergent" for t in AI_TASKS if cfg.get(t) == f"custom:{pid}"}
+        if patch:
+            await db.ai_config.update_one({"id": "singleton"}, {"$set": patch})
+    return {"ok": True}
+
+@api_router.get("/ai/config")
+async def ai_get_config(user: User = Depends(get_current_user)):
+    cfg = await db.ai_config.find_one({"id": "singleton"}, {"_id": 0}) or {}
+    return {t: cfg.get(t, "emergent") for t in AI_TASKS}
+
+@api_router.put("/ai/config")
+async def ai_set_config(body: Dict[str, Any], user: User = Depends(require_owner)):
+    patch = {t: str(body[t]).strip() for t in AI_TASKS if t in body and isinstance(body[t], str)}
+    await db.ai_config.update_one({"id": "singleton"}, {"$set": {"id": "singleton", **patch}}, upsert=True)
+    cfg = await db.ai_config.find_one({"id": "singleton"}, {"_id": 0})
+    return {t: cfg.get(t, "emergent") for t in AI_TASKS}
+
+class VisionBody(BaseModel):
+    task: str = "seleccion"
+    prompt: str
+    image_base64: str
+    model: Optional[str] = None
+
+@api_router.post("/ai/vision")
+async def ai_vision(body: VisionBody, user: User = Depends(require_access)):
+    """Gateway de visión: enruta a Emergent (gratis) o al proveedor propio activo para la tarea."""
+    b64 = re.sub(r"^data:image/[a-z+]+;base64,", "", body.image_base64)
+    cfg = await db.ai_config.find_one({"id": "singleton"}) or {}
+    active = cfg.get(body.task, "emergent")
+    if active and active.startswith("custom:"):
+        rec = await db.ai_providers.find_one({"id": active.split(":", 1)[1]})
+        if rec and rec.get("api_key"):
+            model = body.model or (rec.get(f"{body.task}_models") or rec.get("available_models") or ["gpt-4o"])[0]
+            try:
+                r = requests.post(f"{rec['endpoint']}/chat/completions",
+                    headers={"Authorization": f"Bearer {rec['api_key']}", "Content-Type": "application/json"},
+                    json={"model": model, "max_tokens": 700, "messages": [{"role": "user", "content": [
+                        {"type": "text", "text": body.prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]},
+                    timeout=60)
+                content = r.json()["choices"][0]["message"]["content"]
+                return {"provider": rec["name"], "model": model, "text": content}
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=f"Proveedor propio falló: {str(e)[:160]}")
+    # Emergent (gratis, por defecto)
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+    prov, model = ("openai", body.model or "gpt-5.4")
+    if model.startswith("claude"): prov = "anthropic"
+    elif model.startswith("gemini"): prov = "gemini"
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"vision-{uuid.uuid4().hex[:8]}",
+                   system_message="Eres un asistente experto en fotografía de bodas. Responde conciso.").with_model(prov, model)
+    text = await chat.send_message(UserMessage(text=body.prompt, file_contents=[ImageContent(image_base64=b64)]))
+    return {"provider": "Emergent IA", "model": model, "text": text}
+
+
 app.include_router(api_router)
+
 
 _cors_origins = [o for o in os.environ.get('CORS_ORIGINS', '*').split(',') if o]
 _cors_wildcard = '*' in _cors_origins

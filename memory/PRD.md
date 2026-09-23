@@ -95,6 +95,17 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   consistencia + export .xmp. Motor: "analizar todas". Validación: export CSV. Perfiles:
   buscador + agrupar por fabricante. Verificado por testing agent (0 errores de consola).
 
+## Fase 1a — Proveedores de IA (cerebro) — HECHO (sep 2026)
+- Emergent LLM Key como proveedor GRATIS por defecto (visión: gpt-5.4/claude-sonnet-4-6/gemini-3-flash-preview).
+- Añadir proveedores de PAGO OpenAI-compatibles (endpoint + key): verifica GET /models, marca modelos por
+  tarea (seleccion/ajustes/album), retest, borrar. Solo OWNER.
+- Backend: `/api/ai/providers` (GET/POST), `/api/ai/providers/{id}/models` (PUT), `/retest`, DELETE,
+  `/api/ai/config` (GET/PUT), y GATEWAY `/api/ai/vision` (enruta a Emergent o al proveedor propio activo).
+  Colecciones `ai_providers` + `ai_config`. `require_owner` para gestión.
+- Frontend: `AIProviders.jsx` (`/ai-providers`, nav "IA"). Probado: config/list/gateway visión (Emergent
+  devuelve texto sobre imagen real). Editor: la IA corrige básicos + preset aporta el resto (arquitectura ya existente).
+- PENDIENTE Fase 1b: enchufar Selección IA al gateway. Luego Fase 2 Editor, Fase 3 Álbum AI.
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.

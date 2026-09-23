@@ -14,6 +14,7 @@ import StyleLibrary from "@/pages/StyleLibrary";
 import LearningModule from "@/pages/LearningModule";
 import EngineLab from "@/pages/EngineLab";
 import AutoBasic from "@/pages/AutoBasic";
+import AIProviders from "@/pages/AIProviders";
 import ValidationTool from "@/pages/ValidationTool";
 
 function ProtectedRoute({ children }) {
@@ -46,6 +47,7 @@ function AppRouter() {
       <Route path="/engine-lab" element={<ProtectedRoute><EngineLab /></ProtectedRoute>} />
       <Route path="/auto-basic" element={<ProtectedRoute><AutoBasic /></ProtectedRoute>} />
       <Route path="/validation" element={<ProtectedRoute><ValidationTool /></ProtectedRoute>} />
+      <Route path="/ai-providers" element={<ProtectedRoute><AIProviders /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

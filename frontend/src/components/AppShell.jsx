@@ -11,6 +11,7 @@ const NAV = [
   { to: "/engine-lab", label: "Motor", testId: "nav-engine-btn" },
   { to: "/validation", label: "Validación", testId: "nav-validation-btn" },
   { to: "/profiles", label: "Perfiles", testId: "nav-profiles-btn" },
+  { to: "/ai-providers", label: "IA", testId: "nav-ai-btn" },
 ];
 
 export default function AppShell({ children }) {
