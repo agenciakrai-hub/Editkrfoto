@@ -146,6 +146,33 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
 - SIGUIENTE sugerido: destacados (highlights) a página completa en la maqueta; reordenar spreads con
   drag & drop; guardar la maqueta del álbum por proyecto/carpeta.
 
+## Fase 4 — EDITOR DE ÁLBUM COMPLETO (port EditFlow Pro) — HECHO (jun 2026)
+- El usuario pidió portar EL MISMO editor de álbum profesional de su proyecto EditFlow Pro (Base44),
+  no una versión simplificada. Se copió el módulo íntegro a `src/modules/album/` (64 archivos) y se
+  sustituyó la versión simple anterior (`src/pages/AlbumStudio.jsx` + `src/lib/album/*` quedan sin uso).
+- Ruta `/album` -> `modules/album/pages/AlbumApp` (patrón `?project=ID`): lista de álbumes o editor.
+  Envuelto en `AppShell wide` (contenedor ancho). Nav "Álbum".
+- Capa de datos LOCAL-FIRST: `src/api/base44Client.js` reimplementa la API de entidades de Base44
+  (`base44.entities.X.{list,get,create,update,delete,filter,bulkCreate,bulkUpdate,deleteMany}`) sobre
+  **IndexedDB** del navegador. Las previews ya usaban IndexedDB (`previewStore`). Álbumes portables vía
+  archivo `.editflowalbum` (⌘+S). `base44.functions.invoke` (album-engine/Selección IA por servidor)
+  deshabilitado a propósito: la MAQUETACIÓN es 100% determinista y local (planificador DP en autoPlanner).
+- Shim `src/components/ui/use-toast.js` -> sonner. Tokens semánticos shadcn añadidos a `index.css :root`
+  (tema oscuro coherente: primary emerald). El módulo de Selección IA por servidor se excluyó (solo se
+  conservó `selection/sanitizer.js`, dependencia pura de `visualAi`).
+- FUNCIONES verificadas E2E por testing agent (8/8, 0 errores de consola): crear álbum -> editor;
+  importar fotos (IndexedDB); biblioteca de 23 plantillas + aplicar plantilla manual; MAQUETACIÓN
+  AUTOMÁTICA (multi-selección -> "Maquetar automáticamente" -> config -> previsualización "Asistencia
+  IA" -> "Aplicar propuesta" -> lienzos con fotos); "Validar maquetación"; deshacer/rehacer (⌘Z);
+  "Exportar" (JPEG/PNG, 150/300/600 DPI, sangrado); autosave + persistencia al recargar.
+- Incluye además (del código portado, no re-testeado individualmente pero operativo): smart-fill
+  face-aware (cover con caras), zoom/pan/resize de huecos (mano verde/negra), "Rellenar contenedor",
+  "Relleno completo del lienzo", regenerar lienzo/no-bloqueados/álbum, "Maquetar desde JPG" (lee XMP),
+  re-localización de fotos, navegador de lienzos con reordenado, paneles ocultables/redimensionables.
+- NOTA UX (action item menor): tras "Aplicar propuesta" se abre automáticamente el diálogo de
+  Validación (comportamiento original "validación final"); es modal y hay que cerrarlo antes de usar la
+  barra superior. Se dejó como el original.
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.
