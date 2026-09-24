@@ -180,6 +180,14 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
      lienzos nacen con `fill_photos:false`. Corregido: `fitOrSmartFillSlot` y todas las vías de creación
      (applyAutoLayoutPlan / regenerateNonLocked / regenerateAll / addSpreadWithAutoLayout) ahora respetan
      `fill_photos` → por defecto FIT (foto completa, sin recorte); COVER solo con "Rellenar contenedor".
+  3. CEREBRO DE MOMENTOS (reportado por el usuario): la maquetación automática mezclaba momentos distintos
+     en un mismo lienzo. Implementado `segmentMoments()` en `autoPlanner.js` (determinista, sin IA): segmenta
+     las fotos EN SU ORDEN por momento fotográfico usando pHash (identidad de escena, dist>18) y hueco de
+     `capture_time` (>2 min). La DP ahora salta cualquier bloque que cruce una frontera de momento
+     (`segAt[i-k] !== segAt[i-1]`) → NINGÚN lienzo mezcla momentos y se conserva el orden. Se eliminó
+     `diversityOrder` (reordenaba por diversidad de ráfaga, contrario a "mantener el orden"). 4 tests en
+     `autoPlanner.moment.test.js` (pasan). Se añadió `jest.moduleNameMapper` a `craco.config.js` para que
+     los tests resuelvan el alias `@/` (solo afecta a los tests, no al build).
 
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.

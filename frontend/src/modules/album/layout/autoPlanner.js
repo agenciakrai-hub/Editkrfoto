@@ -19,6 +19,7 @@
 //   4. APROVECHAMIENTO — coste fijo por lienzo creado: menos lienzos y más llenos.
 import { compatibleLayouts, resolveSlots, photoRatio, orientationOf } from "@/modules/album/layout/layoutEngine";
 import { slotSizeClass, faceCropRisk, sizeRank } from "@/modules/album/layout/visualProfile";
+import { phashHexDistance } from "@/modules/album/import/photoIdentity";
 
 // Re-exportado por compatibilidad (otros módulos lo importaban desde aquí).
 export { orientationOf } from "@/modules/album/layout/layoutEngine";
@@ -131,40 +132,29 @@ function scoreGroup(album, layout, photos, profiles, simGroups, costs) {
 // coste total. El orden de las fotos JAMÁS se mezcla: los lienzos consumen bloques
 // consecutivos. Las fotos que no entran vuelven como `leftover` (sin colocar,
 // nunca se pierden).
-// DIVERSIDAD — reordena las fotos para maximizar la distancia entre fotos del
-// mismo grupo de ráfaga/secuencia. Round-robin por grupo: toma una foto de cada
-// grupo en cada ronda, empezando por los grupos más grandes. Las fotos sin grupo
-// (singles) se tratan como grupos de 1. Dentro de cada grupo se conserva el orden
-// temporal (capture_time). Esto hace que los bloques consecutivos que consume la
-// DP sean naturalmente diversos: el primer lienzo tomará una foto de cada grupo
-// en lugar de 6 de la misma escena.
-function diversityOrder(photos, simGroups) {
-  if (!simGroups?.size || photos.length <= 1) return photos;
-  const byGroup = new Map();
-  for (const p of photos) {
-    const g = simGroups.get(p.id);
-    const key = g != null ? `g${g}` : `s${p.id}`;
-    if (!byGroup.has(key)) byGroup.set(key, []);
-    byGroup.get(key).push(p);
+
+// CEREBRO DE MOMENTOS (determinista, sin IA) — segmenta las fotos, EN SU ORDEN, por
+// MOMENTO fotográfico. Señales locales ya persistidas por foto: pHash (identidad de
+// escena) y capture_time (hueco temporal). Un salto claro de escena o un hueco de
+// tiempo grande abre un momento nuevo. La DP NO podrá crear un lienzo que cruce una
+// frontera de momento → nunca se mezclan momentos distintos en el mismo lienzo.
+const MOMENT_PHASH = 18;       // Hamming (64 bits): por encima = escena/momento distinto
+const MOMENT_GAP_MS = 120000;  // hueco temporal (2 min) entre consecutivas = cambio de momento
+
+function segmentMoments(photos) {
+  const seg = new Array(photos.length).fill(0);
+  let cur = 0;
+  for (let i = 1; i < photos.length; i++) {
+    const prev = photos[i - 1], p = photos[i];
+    let boundary = false;
+    const dph = phashHexDistance(prev?.phash, p?.phash);
+    if (Number.isFinite(dph) && dph > MOMENT_PHASH) boundary = true;
+    const t0 = prev?.capture_time, t1 = p?.capture_time;
+    if (typeof t0 === "number" && typeof t1 === "number" && Math.abs(t1 - t0) > MOMENT_GAP_MS) boundary = true;
+    if (boundary) cur++;
+    seg[i] = cur;
   }
-  for (const arr of byGroup.values()) {
-    arr.sort((a, b) => (a.capture_time || 0) - (b.capture_time || 0));
-  }
-  const groupList = [...byGroup.values()].sort((a, b) => b.length - a.length);
-  const result = [];
-  let round = 0;
-  let added = true;
-  while (added) {
-    added = false;
-    for (const arr of groupList) {
-      if (round < arr.length) {
-        result.push(arr[round]);
-        added = true;
-      }
-    }
-    round++;
-  }
-  return result;
+  return seg;
 }
 
 export function planAutoLayout(album, photos, profiles, opts = {}) {
@@ -182,9 +172,11 @@ export function planAutoLayout(album, photos, profiles, opts = {}) {
   const costs = { canvas: priority === "morePhotos" ? CANVAS_COST * 1.6 : priority === "moreSpace" ? CANVAS_COST * 0.5 : CANVAS_COST };
 
   const simGroups = opts?.simGroups || null;
-  // DIVERSIDAD — reordena antes de la DP para que los bloques consecutivos sean
-  // naturalmente variados (round-robin por grupo de ráfaga/secuencia).
-  const ordered = diversityOrder(photos, simGroups);
+  // CEREBRO DE MOMENTOS — se PRESERVA el orden (nada de reordenar por diversidad de
+  // ráfaga: aquí manda el orden cronológico/de importación) y se calcula a qué momento
+  // pertenece cada foto. La DP consume bloques consecutivos y jamás cruza un momento.
+  const ordered = photos;
+  const segAt = segmentMoments(ordered);
   // Límite TOTAL de lienzos del álbum (no de lienzos nuevos): si el álbum ya tiene
   // existingCount lienzos, la IA solo puede crear (limit - existingCount) lienzos
   // adicionales (mínimo 0). Los bloqueados cuentan para el total.
@@ -203,6 +195,9 @@ export function planAutoLayout(album, photos, profiles, opts = {}) {
     for (const l of usable) {
       const k = l.count;
       if (k > i) continue;
+      // No cruzar fronteras de momento: el bloque (lienzo) debe pertenecer a UN solo
+      // momento (los segmentos son contiguos, basta comparar primera y última foto).
+      if (segAt[i - k] !== segAt[i - 1]) continue;
       // El scoring del bloque se calcula UNA vez y se reutiliza para todos los
       // conteos de lienzos c.
       const sc = scoreGroup(album, l, ordered.slice(i - k, i), profiles, simGroups, costs);
