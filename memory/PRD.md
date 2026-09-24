@@ -172,6 +172,14 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
 - NOTA UX (action item menor): tras "Aplicar propuesta" se abre automáticamente el diálogo de
   Validación (comportamiento original "validación final"); es modal y hay que cerrarlo antes de usar la
   barra superior. Se dejó como el original.
+- FIXES (jun 2026, reportados por el usuario):
+  1. Miniaturas de plantillas invisibles: `TemplatePreview` pintaba los huecos con `bg-foreground/60`
+     (blanco en tema oscuro) sobre fondo de álbum blanco. Cambiado a gris fijo `#9ca3af` + borde interior
+     → estructura visible en fondos claros y oscuros.
+  2. El contenedor recortaba la foto: la maquetación forzaba `applySmartFillToSpread` (COVER) aunque los
+     lienzos nacen con `fill_photos:false`. Corregido: `fitOrSmartFillSlot` y todas las vías de creación
+     (applyAutoLayoutPlan / regenerateNonLocked / regenerateAll / addSpreadWithAutoLayout) ahora respetan
+     `fill_photos` → por defecto FIT (foto completa, sin recorte); COVER solo con "Rellenar contenedor".
 
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.

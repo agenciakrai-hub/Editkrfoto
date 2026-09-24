@@ -24,8 +24,8 @@ function TemplatePreview({ album, layout }) {
     <div className="relative w-full overflow-hidden rounded-md"
       style={{ aspectRatio: `${W} / ${H}`, backgroundColor: album.background_color || "#FFFFFF" }}>
       {slots.map((s) => (
-        <div key={s.slot_id} className="absolute rounded-[2px] bg-foreground/60"
-          style={{ left: `${(s.x_mm / W) * 100}%`, top: `${(s.y_mm / H) * 100}%`, width: `${(s.w_mm / W) * 100}%`, height: `${(s.h_mm / H) * 100}%` }} />
+        <div key={s.slot_id} className="absolute rounded-[2px]"
+          style={{ left: `${(s.x_mm / W) * 100}%`, top: `${(s.y_mm / H) * 100}%`, width: `${(s.w_mm / W) * 100}%`, height: `${(s.h_mm / H) * 100}%`, backgroundColor: "#9ca3af", boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.2)" }} />
       ))}
     </div>
   );

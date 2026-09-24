@@ -248,7 +248,10 @@ export function useAlbumStore(project, initialSpreads, photosById) {
   // y los botones "Relleno"/"Contener" del hueco siguen cambiándolo a voluntad.
   const fitOrSmartFillSlot = useCallback((sl, photo, spread) => {
     if (!sl || !photo) return { fit_mode: "fit", transform: freshTransform() };
-    return smartFillSlot(sl, photo);
+    // Por defecto FIT (foto COMPLETA, sin recorte). COVER inteligente SOLO si el
+    // lienzo tiene "Rellenar contenedor" activo (decisión explícita del fotógrafo).
+    if (spread?.fill_photos) return smartFillSlot(sl, photo);
+    return { fit_mode: "fit", transform: freshTransform() };
   }, []);
 
   const applyAutoLayout = useCallback(async (id, layoutId, photoIds) => {
@@ -289,8 +292,8 @@ export function useAlbumStore(project, initialSpreads, photosById) {
       ...built,
       slots: (built.slots || []).map((sl, i) => ({ ...sl, photo_id: photoIds?.[i] ?? null })),
     };
-    // ENCUADRE AUTOMÁTICO INTELIGENTE — COVER con caras/sujeto (transform virtual).
-    const filled = await applySmartFillToSpread(next, photosByIdRef.current, project.id);
+    // Por defecto FIT (sin recorte); COVER solo si el lienzo tiene "Rellenar contenedor".
+    const filled = next.fill_photos ? await applySmartFillToSpread(next, photosByIdRef.current, project.id) : next;
     apply([...spreadsRef.current, filled], [filled.id]);
     setSelectedSpreadId(filled.id);
     setSelectedSlotId(null);
@@ -376,7 +379,7 @@ export function useAlbumStore(project, initialSpreads, photosById) {
       // recortar el original (transform virtual: scale + offsets). El botón «Rellenar
       // contenedor» sigue disponible para el ajuste manual posterior. Mismo sistema que
       // el editor manual (smartFillTransform) — sin motor paralelo de crop.
-      const filled = await applySmartFillToSpread(next, photosByIdRef.current, project.id);
+      const filled = next.fill_photos ? await applySmartFillToSpread(next, photosByIdRef.current, project.id) : next;
       created.push(filled);
       list.push(filled);
     }
@@ -441,7 +444,7 @@ export function useAlbumStore(project, initialSpreads, photosById) {
       const next = applyLayout(base, g.layout, project);
       next.slots = (next.slots || []).map((sl, i) => ({ ...sl, photo_id: g.assignment[i] ?? null }));
       // ENCUADRE AUTOMÁTICO INTELIGENTE — COVER con caras/sujeto (transform virtual).
-      const filled = await applySmartFillToSpread(next, photosByIdRef.current, project.id);
+      const filled = next.fill_photos ? await applySmartFillToSpread(next, photosByIdRef.current, project.id) : next;
       created.push(filled);
       list.push(filled);
     }
@@ -779,7 +782,7 @@ export function useAlbumStore(project, initialSpreads, photosById) {
       const next = applyLayout(base, g.layout, project);
       next.slots = (next.slots || []).map((sl, i) => ({ ...sl, photo_id: g.assignment[i] ?? null }));
       // ENCUADRE AUTOMÁTICO INTELIGENTE — COVER con caras/sujeto (transform virtual).
-      const filled = await applySmartFillToSpread(next, photosByIdRef.current, project.id);
+      const filled = next.fill_photos ? await applySmartFillToSpread(next, photosByIdRef.current, project.id) : next;
       created.push(filled);
       list.push(filled);
     }
