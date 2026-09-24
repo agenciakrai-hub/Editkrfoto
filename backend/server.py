@@ -2067,6 +2067,51 @@ async def ai_select_burst(body: BurstSelectBody, user: User = Depends(require_ac
             "reason": (data.get("reason") or "").strip()[:280], "raw": (raw or "")[:400]}
 
 
+class AlbumPhoto(BaseModel):
+    filename: str
+    image_base64: str
+
+class AlbumOrderBody(BaseModel):
+    photos: List[AlbumPhoto]
+    context: Optional[str] = None
+
+@api_router.post("/ai/album-order")
+async def ai_album_order(body: AlbumOrderBody, user: User = Depends(require_access)):
+    """La IA ordena las fotos para contar la historia del día y marca las más impactantes."""
+    photos = body.photos[:24]
+    if len(photos) < 2:
+        raise HTTPException(status_code=400, detail="Se necesitan al menos 2 fotos")
+    listing = "\n".join(f"{i+1}. {p.filename}" for i, p in enumerate(photos))
+    system = ("Eres un diseñador profesional de álbumes de boda. Ordenas las fotos para narrar el día "
+              "(preparativos, ceremonia, retratos de la pareja, familia, fiesta) y detectas las tomas más "
+              "impactantes que merecen página completa.")
+    prompt = (f"Estas son {len(photos)} fotos (miniaturas en este mismo orden):\n{listing}\n\n"
+              + (f"Contexto: {body.context}\n\n" if body.context else "")
+              + "Devuelve un nuevo orden que cuente la historia del día y marca las mejores como destacadas. "
+              "Responde SOLO con JSON válido: {\"order\": [<números 1..N en el nuevo orden, todos>], "
+              "\"highlights\": [<números de las más impactantes>], \"reason\": \"<motivo breve en español>\"}.")
+    raw = await _ai_multi_vision("album", system, prompt, [p.image_base64 for p in photos])
+    m = re.search(r"\{.*\}", raw or "", re.S)
+    try:
+        data = json.loads(m.group(0)) if m else {}
+    except Exception:
+        data = {}
+    def _to_names(nums):
+        out, seen = [], set()
+        for x in (nums or []):
+            try: k = int(x)
+            except Exception: continue
+            if 1 <= k <= len(photos) and k not in seen:
+                seen.add(k); out.append(photos[k - 1].filename)
+        return out
+    ordered = _to_names(data.get("order"))
+    for p in photos:  # añade cualquiera que la IA se dejara, preservando el orden original
+        if p.filename not in ordered:
+            ordered.append(p.filename)
+    return {"ordered_filenames": ordered, "highlights": _to_names(data.get("highlights")),
+            "reason": (data.get("reason") or "").strip()[:280], "raw": (raw or "")[:400]}
+
+
 
 app.include_router(api_router)
 
