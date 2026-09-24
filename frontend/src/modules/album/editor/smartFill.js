@@ -17,9 +17,8 @@
 // no sale del dispositivo), con caché en memoria por foto. Si el navegador no la
 // ofrece, o no detecta nada, se aplica un anclaje determinista hacia el tercio
 // superior (donde suelen estar las cabezas). Nada se envía a ningún servicio.
-import { freshTransform, photoRatio, sameRatio } from "@/modules/album/layout/layoutEngine";
+import { freshTransform, sameRatio } from "@/modules/album/layout/layoutEngine";
 import { getTierPreview } from "@/modules/album/lib/previewStore";
-import { getCachedVisualProfile } from "@/modules/album/layout/visualAi";
 
 const faceCache = new Map(); // photoId -> [{x,y,w,h}] (normalizado 0..1) | null
 
@@ -74,9 +73,9 @@ export async function ensureFaces(projectId, photo) {
   return faces;
 }
 
-// Punto de atención: centro de la unión de las caras detectadas; sin caras, anclaje
-// determinista (tercio alto si sobra imagen en vertical, centrado en horizontal).
-function focusPoint(faces, dw, dh, w, h) {
+// Punto de atención: centro de la unión de las caras detectadas (para posibles usos
+// futuros de reencuadre). El relleno automático es cover centrado (object-fit).
+function focusPoint(faces) {
   if (faces?.length) {
     const x0 = Math.min(...faces.map((f) => f.x));
     const y0 = Math.min(...faces.map((f) => f.y));
@@ -84,8 +83,9 @@ function focusPoint(faces, dw, dh, w, h) {
     const y1 = Math.max(...faces.map((f) => f.y + f.h));
     return { uf: (x0 + x1) / 2, vf: (y0 + y1) / 2 };
   }
-  return { uf: 0.5, vf: dh > h ? 0.38 : 0.5 };
+  return { uf: 0.5, vf: 0.5 };
 }
+void focusPoint;
 
 // SMART COVER + FACE/SUBJECT-AWARE POSITIONING — transformación virtual que cubre el
 // hueco por completo (cover, sin deformación) y desplaza la foto para que las
@@ -111,65 +111,18 @@ function focusPoint(faces, dw, dh, w, h) {
 //   7) Ajuste post-recorte: si tras recortar el offset al margen de cobertura alguna
 //      cara queda fuera, se desplaza el offset para meterla (prioridad de caras sobre
 //      el centrado perfecto).
-// El original JAMÁS se recorta: todo es transform virtual (scale + offsets).
-export function smartFillTransform(photo, slot, faces) {
+// RELLENO = COVER centrado. La regla CSS object-fit:cover del render (SlotFrame y la
+// miniatura del navegador) YA escala la foto para CUBRIR el hueco por completo y la
+// CENTRA. Por eso el relleno automático NO añade zoom (scale 1) NI desplazamiento
+// (offset 0): con object-fit:cover a escala 1 la foto llena SIEMPRE el contenedor
+// entero y queda centrada (las caras, normalmente centrales, se conservan). Cualquier
+// offset a escala 1 movería la CAJA de la imagen y dejaría franjas vacías — ese era el
+// fallo—. Para reencuadrar una foto concreta, el fotógrafo hace clic en ella (modo
+// FOTO) y arrastra o hace zoom a mano. Export (spreadRenderer) usa el mismo contrato.
+export function smartFillTransform(photo, slot) {
   const identity = { fit_mode: "fill", transform: freshTransform() };
   if (!photo || !slot || !(slot.w_mm > 0) || !(slot.h_mm > 0)) return identity;
-  const r = photoRatio(photo);
-  const w = slot.w_mm;
-  const h = slot.h_mm;
-  // Dimensiones de la foto a escala COVER (k=1), en mm.
-  const dw = r >= w / h ? h * r : w;
-  const dh = r >= w / h ? h : w / r;
-
-  // Punto de atención: centro del grupo de caras (normalizado 0..1).
-  let fcx, fcy, hasFaces = false;
-  if (faces?.length) {
-    hasFaces = true;
-    const x0 = Math.min(...faces.map((f) => f.x));
-    const y0 = Math.min(...faces.map((f) => f.y));
-    const x1 = Math.max(...faces.map((f) => f.x + f.w));
-    const y1 = Math.max(...faces.map((f) => f.y + f.h));
-    fcx = (x0 + x1) / 2;
-    fcy = (y0 + y1) / 2;
-  } else {
-    // Sin caras: focalPoint del perfil visual IA → anclaje determinista.
-    const prof = getCachedVisualProfile(photo);
-    if (prof?.focalPoint) {
-      fcx = prof.focalPoint.x;
-      fcy = prof.focalPoint.y;
-    } else {
-      const fp = focusPoint(null, dw, dh, w, h);
-      fcx = fp.uf;
-      fcy = fp.vf;
-    }
-  }
-
-  // RELLENO = cover COMPLETO, centrado en el sujeto y SIN zoom extra (k=1). Antes se
-  // acercaba hasta 3× para "encuadrar" las caras, lo que DESBORDABA el contenedor y
-  // recortaba de forma impredecible. Ahora la foto cubre el hueco a escala 1 (cover) y
-  // solo se DESPLAZA (sin ampliar) para centrar el sujeto/caras dentro del margen de
-  // cobertura → SIEMPRE cubre por completo y las caras no se pierden.
-  const k = 1;
-  const mxCov = (k * dw - w) / 2;
-  const myCov = (k * dh - h) / 2;
-  // Sin caras: centrado; leve aire para las cabezas SOLO si hay recorte vertical.
-  if (!hasFaces && myCov > 0) fcy = 0.44;
-  let ox = -k * (fcx - 0.5) * dw;
-  let oy = -k * (fcy - 0.5) * dh;
-  ox = Math.max(-mxCov, Math.min(mxCov, ox));
-  oy = Math.max(-myCov, Math.min(myCov, oy));
-
-  return {
-    fit_mode: "fill",
-    transform: {
-      scale: k,
-      offset_x_mm: Math.round(ox * 100) / 100,
-      offset_y_mm: Math.round(oy * 100) / 100,
-      rotation: 0,
-      crop: null,
-    },
-  };
+  return { fit_mode: "fill", transform: freshTransform() };
 }
 
 // Rellena UN hueco de forma SÍNCRONA usando las caras ya cacheadas (sin detección
