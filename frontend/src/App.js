@@ -14,7 +14,8 @@ import StyleLibrary from "@/pages/StyleLibrary";
 import LearningModule from "@/pages/LearningModule";
 import EngineLab from "@/pages/EngineLab";
 import AutoBasic from "@/pages/AutoBasic";
-import AlbumStudio from "@/pages/AlbumStudio";
+import AppShell from "@/components/AppShell";
+import AlbumApp from "@/modules/album/pages/AlbumApp";
 import AIProviders from "@/pages/AIProviders";
 import ValidationTool from "@/pages/ValidationTool";
 
@@ -47,7 +48,7 @@ function AppRouter() {
       <Route path="/learning" element={<ProtectedRoute><LearningModule /></ProtectedRoute>} />
       <Route path="/engine-lab" element={<ProtectedRoute><EngineLab /></ProtectedRoute>} />
       <Route path="/auto-basic" element={<ProtectedRoute><AutoBasic /></ProtectedRoute>} />
-      <Route path="/album" element={<ProtectedRoute><AlbumStudio /></ProtectedRoute>} />
+      <Route path="/album" element={<ProtectedRoute><AppShell wide><AlbumApp /></AppShell></ProtectedRoute>} />
       <Route path="/validation" element={<ProtectedRoute><ValidationTool /></ProtectedRoute>} />
       <Route path="/ai-providers" element={<ProtectedRoute><AIProviders /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />

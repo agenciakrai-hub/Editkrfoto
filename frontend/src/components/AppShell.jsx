@@ -15,7 +15,7 @@ const NAV = [
   { to: "/ai-providers", label: "IA", testId: "nav-ai-btn" },
 ];
 
-export default function AppShell({ children }) {
+export default function AppShell({ children, wide = false }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -89,7 +89,7 @@ export default function AppShell({ children }) {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main className={wide ? "mx-auto max-w-[1750px] px-4 py-5" : "mx-auto max-w-6xl px-6 py-8"}>{children}</main>
     </div>
   );
 }
