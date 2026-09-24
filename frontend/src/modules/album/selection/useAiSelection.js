@@ -125,6 +125,13 @@ export function useAiSelection(project, photos) {
         },
       });
       setSelection(done);
+      // VÍNCULO Selección → Maquetación: marca el estado IA en CADA foto para que el
+      // editor muestre "Maquetar selección IA (N)" y el filtro "Selección IA", y para que
+      // la maquetación use solo las recomendadas. Respeta forzadas/bloqueadas (ya van en E7).
+      const selSet = new Set((result.selection || []).map((s) => s.photo_id));
+      await base44.entities.AlbumPhoto.bulkUpdate(
+        photos.map((p) => ({ id: p.id, ai_state: selSet.has(p.id) ? "recommended" : "discarded" }))
+      ).catch(() => {});
       setProgress(null);
     } catch (e) {
       if (e instanceof PipelineCancelled || e?.cancelled) {

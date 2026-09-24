@@ -231,6 +231,17 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
   reales (varias llamadas de visión). Nota: el texto de consentimiento aún menciona gemini/qwen/nvidia
   (copia original); funcionalmente usa Emergent.
 
+## Selección IA — 3 mejoras (jun 2026)
+1. VÍNCULO Selección→Maquetación: al completar el pipeline, `useAiSelection` marca `ai_state`
+   ("recommended"/"discarded") en CADA AlbumPhoto (bulkUpdate) según `result.selection` (photo_id).
+   Enciende el botón "Maquetar selección IA (N)" y el filtro "Selección IA"; la maquetación usa solo
+   las recomendadas. Respeta forzadas/bloqueadas (restricciones en E7).
+2. CACHÉ (ya existente, confirmado): el pipeline reanuda desde AlbumPhotoAnalysis/AlbumPhotoGroup/
+   AlbumMoment persistidos → re-ejecutar no repite llamadas de visión.
+3. REVISIÓN MANUAL + copia: `override(include/discard/block)` ya escribe ai_state/ai_override y prevalece.
+   Corregida la copia de ConsentPanel (motor Emergent, no gemini/qwen/nvidia). Verificado: endpoints
+   e4/e7/providers-test responden con selección real; compila; página y consent OK.
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.

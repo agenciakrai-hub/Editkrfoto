@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { ShieldCheck, Sparkles } from "lucide-react";
-import { PROVIDER_CHAIN } from "@/modules/album/selection/useAiSelection";
 
 // Bloque 3 — consentimiento EXPLÍCITO: sin esto no sale ningún dato del
 // dispositivo (verificado también en album-engine: rechaza sin consent:true).
@@ -17,7 +16,7 @@ export default function ConsentPanel({ photoCount, estimates, busy, onAccept }) 
         <p>LOS ARCHIVOS ORIGINALES NUNCA SE ENVIARÁN. NADA SE SUBE A NINGÚN ALMACENAMIENTO: las miniaturas viajan inline y se descartan.</p>
         <p>
           Volumen estimado para {photoCount} fotos: ≈ {estimates.calls} llamadas · ≈ {estimates.mb} MB en total ·
-          cadena de proveedores: {PROVIDER_CHAIN.join(" → ")} (Gemini de pago, con Qwen y NVIDIA como respaldo).
+          motor de visión IA de RAW AI Studio (Emergent). Usa el proveedor/modelo configurado en IA → Proveedores.
         </p>
         <p>Puedes cancelar en cualquier momento, reanudar donde lo dejaste y revocar el consentimiento cuando quieras.</p>
       </div>
