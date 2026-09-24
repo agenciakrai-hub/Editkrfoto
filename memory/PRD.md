@@ -188,6 +188,12 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
      `diversityOrder` (reordenaba por diversidad de ráfaga, contrario a "mantener el orden"). 4 tests en
      `autoPlanner.moment.test.js` (pasan). Se añadió `jest.moduleNameMapper` a `craco.config.js` para que
      los tests resuelvan el alias `@/` (solo afecta a los tests, no al build).
+  4. "Rellenar contenedor" no rellenaba bien (reportado por el usuario): `smartFillTransform` hacía un
+     zoom facial de hasta 3× que DESBORDABA el contenedor y encuadraba de forma impredecible (o dejaba
+     franjas). Reescrito a lo pedido: RELLENO = cover COMPLETO a escala 1, centrado en el sujeto/caras,
+     SIN zoom extra. La foto cubre el hueco a k=1 y solo se DESPLAZA (clamp al margen de cobertura) para
+     conservar las caras → siempre cubre y no se pierden caras. El zoom manual (rueda) sigue disponible.
+     5 tests en `editor/smartFill.test.js` (pasan). El renderizador de export usa el mismo transform.
 
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.

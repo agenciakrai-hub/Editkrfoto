@@ -22,7 +22,6 @@ import { getTierPreview } from "@/modules/album/lib/previewStore";
 import { getCachedVisualProfile } from "@/modules/album/layout/visualAi";
 
 const faceCache = new Map(); // photoId -> [{x,y,w,h}] (normalizado 0..1) | null
-const MAX_ZOOM = 3; // techo de zoom del relleno automático
 
 let detectorChecked = false;
 let detector = null;
@@ -113,8 +112,6 @@ function focusPoint(faces, dw, dh, w, h) {
 //      cara queda fuera, se desplaza el offset para meterla (prioridad de caras sobre
 //      el centrado perfecto).
 // El original JAMÁS se recorta: todo es transform virtual (scale + offsets).
-const SAFETY_MARGIN = 0.04; // 4 % del lado del hueco de aire alrededor de las caras
-
 export function smartFillTransform(photo, slot, faces) {
   const identity = { fit_mode: "fill", transform: freshTransform() };
   if (!photo || !slot || !(slot.w_mm > 0) || !(slot.h_mm > 0)) return identity;
@@ -125,16 +122,16 @@ export function smartFillTransform(photo, slot, faces) {
   const dw = r >= w / h ? h * r : w;
   const dh = r >= w / h ? h : w / r;
 
-  // Punto de atención + bounding box del grupo de caras (normalizado 0..1).
-  let fcx, fcy, hasFaces = false, fx0, fy0, fx1, fy1;
+  // Punto de atención: centro del grupo de caras (normalizado 0..1).
+  let fcx, fcy, hasFaces = false;
   if (faces?.length) {
     hasFaces = true;
-    fx0 = Math.min(...faces.map((f) => f.x));
-    fy0 = Math.min(...faces.map((f) => f.y));
-    fx1 = Math.max(...faces.map((f) => f.x + f.w));
-    fy1 = Math.max(...faces.map((f) => f.y + f.h));
-    fcx = (fx0 + fx1) / 2;
-    fcy = (fy0 + fy1) / 2;
+    const x0 = Math.min(...faces.map((f) => f.x));
+    const y0 = Math.min(...faces.map((f) => f.y));
+    const x1 = Math.max(...faces.map((f) => f.x + f.w));
+    const y1 = Math.max(...faces.map((f) => f.y + f.h));
+    fcx = (x0 + x1) / 2;
+    fcy = (y0 + y1) / 2;
   } else {
     // Sin caras: focalPoint del perfil visual IA → anclaje determinista.
     const prof = getCachedVisualProfile(photo);
@@ -148,66 +145,20 @@ export function smartFillTransform(photo, slot, faces) {
     }
   }
 
-  // Objetivo: centro del grupo de caras en el centro horizontal y ~42 % del alto.
-  const bx = 0;
-  const by = -h * 0.08;
-
-  // Cota inferior de k: cubrir el hueco Y permitir que el offset lleve el centro de
-  // caras al objetivo sin recortar (si no se recorta, el punto llega exactamente).
-  let k = 1;
-  if (fcx > 0) k = Math.max(k, (w / 2 + bx) / (dw * fcx));
-  if (fcx < 1) k = Math.max(k, (w / 2 - bx) / (dw * (1 - fcx)));
-  if (fcy > 0) k = Math.max(k, (h / 2 + by) / (dh * fcy));
-  if (fcy < 1) k = Math.max(k, (h / 2 - by) / (dh * (1 - fcy)));
-
-  // Cota superior de k por visibilidad de caras: el BBOX completo debe quedar dentro
-  // del hueco + margen de seguridad. Acercar (k ↑) empuja los bordes de las caras
-  // hacia fuera del hueco → COTAS SUPERIORES. Si k_min > k_face_max, priorizamos caras.
-  if (hasFaces) {
-    let kFaceMax = MAX_ZOOM;
-    // Borde izquierdo de la cara dentro del hueco: bx + k*dw*(fx0-fcx) >= -w/2 + S*w
-    if (fcx > fx0) kFaceMax = Math.min(kFaceMax, (w / 2 - SAFETY_MARGIN * w + bx) / (dw * (fcx - fx0)));
-    // Borde derecho: bx + k*dw*(fx1-fcx) <= w/2 - S*w
-    if (fx1 > fcx) kFaceMax = Math.min(kFaceMax, (w / 2 - SAFETY_MARGIN * w - bx) / (dw * (fx1 - fcx)));
-    // Borde superior: by + k*dh*(fy0-fcy) >= -h/2 + S*h
-    if (fcy > fy0) kFaceMax = Math.min(kFaceMax, (h / 2 - SAFETY_MARGIN * h + by) / (dh * (fcy - fy0)));
-    // Borde inferior: by + k*dh*(fy1-fcy) <= h/2 - S*h
-    if (fy1 > fcy) kFaceMax = Math.min(kFaceMax, (h / 2 - SAFETY_MARGIN * h - by) / (dh * (fy1 - fcy)));
-    k = Math.max(1, Math.min(k, kFaceMax));
-  }
-
-  k = Math.min(MAX_ZOOM, k);
-  // El k GUARDADO (redondeado) es el que fija los márgenes de cobertura: los offsets
-  // se calculan y recortan con ese mismo k, o el redondeo dejaría franjas sin cubrir.
-  k = Math.round(k * 100) / 100;
-
-  let ox = bx - k * (fcx - 0.5) * dw;
-  let oy = by - k * (fcy - 0.5) * dh;
-
-  // Recortar al margen de cobertura (nunca huecos).
+  // RELLENO = cover COMPLETO, centrado en el sujeto y SIN zoom extra (k=1). Antes se
+  // acercaba hasta 3× para "encuadrar" las caras, lo que DESBORDABA el contenedor y
+  // recortaba de forma impredecible. Ahora la foto cubre el hueco a escala 1 (cover) y
+  // solo se DESPLAZA (sin ampliar) para centrar el sujeto/caras dentro del margen de
+  // cobertura → SIEMPRE cubre por completo y las caras no se pierden.
+  const k = 1;
   const mxCov = (k * dw - w) / 2;
   const myCov = (k * dh - h) / 2;
+  // Sin caras: centrado; leve aire para las cabezas SOLO si hay recorte vertical.
+  if (!hasFaces && myCov > 0) fcy = 0.44;
+  let ox = -k * (fcx - 0.5) * dw;
+  let oy = -k * (fcy - 0.5) * dh;
   ox = Math.max(-mxCov, Math.min(mxCov, ox));
   oy = Math.max(-myCov, Math.min(myCov, oy));
-
-  // Ajuste post-recorte: si el recorte del offset deja alguna cara fuera del hueco,
-  // desplaza el offset para meterla (prioridad de caras sobre el centrado perfecto).
-  if (hasFaces) {
-    const sLeft = ox + k * (fx0 - 0.5) * dw;
-    const sRight = ox + k * (fx1 - 0.5) * dw;
-    const sTop = oy + k * (fy0 - 0.5) * dh;
-    const sBot = oy + k * (fy1 - 0.5) * dh;
-    const minLeft = -w / 2 + SAFETY_MARGIN * w;
-    const maxRight = w / 2 - SAFETY_MARGIN * w;
-    const minTop = -h / 2 + SAFETY_MARGIN * h;
-    const maxBot = h / 2 - SAFETY_MARGIN * h;
-    if (sLeft < minLeft) ox += minLeft - sLeft;
-    if (sRight > maxRight) ox -= sRight - maxRight;
-    if (sTop < minTop) oy += minTop - sTop;
-    if (sBot > maxBot) oy -= sBot - maxBot;
-    ox = Math.max(-mxCov, Math.min(mxCov, ox));
-    oy = Math.max(-myCov, Math.min(myCov, oy));
-  }
 
   return {
     fit_mode: "fill",
