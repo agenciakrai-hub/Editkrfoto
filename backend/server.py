@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Body
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -2111,6 +2111,126 @@ async def ai_album_order(body: AlbumOrderBody, user: User = Depends(require_acce
     return {"ordered_filenames": ordered, "highlights": _to_names(data.get("highlights")),
             "reason": (data.get("reason") or "").strip()[:280], "raw": (raw or "")[:400]}
 
+
+
+def _parse_loose(raw: str):
+    m = re.search(r"\{[\s\S]*\}", raw or "")
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return {}
+
+
+@api_router.post("/album-engine")
+async def album_engine(body: dict = Body(...), user: User = Depends(require_access)):
+    """Motor de Selección IA del álbum (E3–E7 + visual-profile) sobre el gateway de visión."""
+    action = body.get("action")
+    ev = body.get("event_type") or "boda"
+
+    if action == "providers-test":
+        return {"action": action, "results": [{"provider": "emergent", "ok": True, "model": "gemini-vision"}]}
+
+    if action == "e3-continuity":
+        pairs = body.get("pairs") or []
+        imgs = []
+        for p in pairs:
+            imgs += [p.get("a"), p.get("b")]
+        system = "Eres el asistente de agrupación de ráfagas de un fotógrafo profesional."
+        prompt = ("Recibirás PARES de fotos consecutivas (par 0 = imágenes 1 y 2, etc.). Para cada par decide si "
+                  "la segunda pertenece al MISMO MOMENTO fotográfico que la primera (misma ráfaga) o inicia una NUEVA "
+                  "ráfaga (giro de cabeza, cambio de pose/expresión, sujeto que entra/sale, cambio de acción o escena). "
+                  "El tiempo por sí solo no une fotos. Responde SOLO JSON: "
+                  '{"decisions":[{"pair":0,"same_moment":true,"change":"none","confidence":90}]} '
+                  '(change: head|pose|expression|subject|action|scene|none). '
+                  f"Pares: {', '.join('par '+str(i) for i in range(len(pairs)))}")
+        data = _parse_loose(await _ai_multi_vision("seleccion", system, prompt, imgs))
+        decisions = []
+        for i in range(len(pairs)):
+            d = next((x for x in (data.get("decisions") or []) if int(x.get("pair", -1)) == i), None)
+            decisions.append({"pair": i, "same_moment": (d.get("same_moment") is not False) if d else True,
+                              "change": str((d or {}).get("change") or "none"), "confidence": int((d or {}).get("confidence") or 0)})
+        return {"action": action, "decisions": decisions, "provider": "emergent"}
+
+    if action == "e4-triage":
+        batch = body.get("batch") or []
+        aliases = [p.get("alias") for p in batch]
+        system = f"Eres el asistente de selección fotográfica de un fotógrafo profesional de {ev}."
+        prompt = ("Analiza CADA foto (por su alias, en el orden dado). Valora technical (0-100), aesthetic (0-100), "
+                  "people (0-100 o null), confidence (0-100) y reasons (1-2 frases en español). Responde SOLO JSON: "
+                  '{"analyses":[{"alias":"...","dims":{"technical":0,"aesthetic":0,"people":0},"confidence":0,"reasons":"..."}]}. '
+                  f"Fotos: {' | '.join(str(p.get('alias'))+' (local: '+json.dumps(p.get('local_tech') or {})+')' for p in batch)}")
+        data = _parse_loose(await _ai_multi_vision("seleccion", system, prompt, [p.get("thumb") for p in batch]))
+        by = {a.get("alias"): a for a in (data.get("analyses") or [])}
+        analyses = [by[a] for a in aliases if a in by]
+        missing = [a for a in aliases if a not in by]
+        return {"action": action, "analyses": analyses, "missing": missing, "provider": "emergent"}
+
+    if action == "e5-group":
+        group = body.get("group") or []
+        kind = body.get("group_kind") or "burst"
+        system = f"Eres el asistente de selección fotográfica de un fotógrafo profesional de {ev}."
+        prompt = (f"Este es un {'grupo de ráfaga' if kind == 'burst' else 'grupo/secuencia temporal'} de un mismo momento. "
+                  "Elige la MEJOR foto (promoted) por emoción, expresiones, miradas, nitidez del sujeto e instante decisivo. "
+                  "Para cada foto: dims{technical,aesthetic,people}, group_rank (1=mejor), reasons. Responde SOLO JSON: "
+                  '{"promoted":"alias","per_photo":[{"alias":"...","dims":{"technical":0,"aesthetic":0,"people":0},"group_rank":1,"reasons":"..."}],"group_summary":"..."}. '
+                  f"Fotos: {' | '.join(str(p.get('alias')) for p in group)}")
+        data = _parse_loose(await _ai_multi_vision("seleccion", system, prompt, [p.get("thumb") for p in group]))
+        per = data.get("per_photo") or []
+        promoted = data.get("promoted")
+        if not promoted or not any(p.get("alias") == promoted for p in group):
+            promoted = (sorted(per, key=lambda a: a.get("group_rank", 99))[0].get("alias") if per else group[0].get("alias"))
+        return {"action": action, "promoted": promoted, "per_photo": per,
+                "group_summary": str(data.get("group_summary") or ""), "provider": "emergent"}
+
+    if action == "e6-moments":
+        reps = body.get("representatives") or []
+        system = f"Eres el asistente narrativo de un fotógrafo profesional de {ev}."
+        prompt = ("Recibirás las fotos representativas (una por momento) en orden temporal. Agrúpalas en MOMENTOS "
+                  "narrativos del álbum (preparativos, detalles, ceremonia, retratos, fiesta). Cada momento: name, "
+                  "archetype, order (1..N), summary, aliases. Responde SOLO JSON: "
+                  '{"moments":[{"name":"...","archetype":"...","order":1,"summary":"...","aliases":["a1"]}]}. '
+                  f"Representativas: {' | '.join(str(r.get('alias'))+' ('+str(r.get('group_kind'))+')' for r in reps)}")
+        data = _parse_loose(await _ai_multi_vision("album", system, prompt, [r.get("thumb") for r in reps]))
+        return {"action": action, "moments": data.get("moments") or [], "provider": "emergent"}
+
+    if action == "visual-profile":
+        batch = body.get("batch") or []
+        aliases = [p.get("alias") for p in batch]
+        system = "Eres un asistente de maquetación de álbumes fotográficos profesionales."
+        prompt = ("Analiza CADA foto (por alias, en orden) para elegir la mejor plantilla. Para cada una: subjectType "
+                  "(portrait|couple|group|landscape|architecture|detail|documentary|other), visualImportance (0-100), "
+                  "facesCount, peopleCount, focalPoint{x,y} (0-1), composition{negativeSpace,balance,complexity} (0-1), "
+                  "preferredSlot{size:large|medium|small, orientation:landscape|portrait|square}. Responde SOLO JSON: "
+                  '{"profiles":[{"alias":"...","subjectType":"...","visualImportance":50,"facesCount":0,"peopleCount":0,"focalPoint":{"x":0.5,"y":0.5},"composition":{"negativeSpace":0.5,"balance":0.5,"complexity":0.5},"preferredSlot":{"size":"medium","orientation":"landscape"}}]}. '
+                  f"Fotos: {' | '.join(str(p.get('alias')) for p in batch)}")
+        data = _parse_loose(await _ai_multi_vision("album", system, prompt, [p.get("thumb") for p in batch]))
+        by = {pr.get("alias"): pr for pr in (data.get("profiles") or [])}
+        profiles = [by.get(a) or {"alias": a, "visualImportance": 50, "facesCount": 0, "peopleCount": 0,
+                                   "preferredSlot": {"size": "medium"}} for a in aliases]
+        return {"action": action, "profiles": profiles, "provider": "emergent"}
+
+    if action == "e7-assembly":
+        desc = body.get("descriptors") or []
+        forced = body.get("forced") or []
+        blocked = body.get("blocked") or []
+        target = body.get("album_target") or {"total": 60, "per_spread": 3, "spreads": 20}
+        system = f"Eres el asistente de selección final de un fotógrafo profesional de {ev}."
+        prompt = ("Recibirás descriptores de TODAS las fotos. Selecciona por CALIDAD + COBERTURA narrativa + VARIEDAD "
+                  "(no solo puntuación). Fotos similares pueden coexistir si aportan valor. "
+                  f"Objetivo ~{target.get('total')} fotos (~{target.get('spreads')} lienzos × {target.get('per_spread')}). "
+                  f"INCLUIR SIEMPRE: {', '.join(forced) if forced else '(ninguna)'}. EXCLUIR SIEMPRE: {', '.join(blocked) if blocked else '(ninguna)'}. "
+                  "Asigna role (hero|key|support|detail), moment, category, reasons, tech_exception. Responde SOLO JSON: "
+                  '{"selection":[{"alias":"...","role":"...","moment":"...","category":"...","reasons":"...","tech_exception":false}],"funnel_report":{"total_input":0,"selected":0,"coverage":"...","notes":"..."},"coverage":"..."}. '
+                  f"Descriptores: {' | '.join(str(d.get('alias'))+': '+str(d.get('phrase')) for d in desc)}")
+        data = _parse_loose(await _ai_multi_vision("seleccion", system, prompt, []))
+        valid = {d.get("alias") for d in desc}
+        sel = [s for s in (data.get("selection") or []) if s.get("alias") in valid]
+        return {"action": action, "selection": sel, "funnel_report": data.get("funnel_report") or {},
+                "coverage": str(data.get("coverage") or ""), "provider": "emergent"}
+
+    raise HTTPException(status_code=400, detail=f"unknown_action: {action}")
 
 
 app.include_router(api_router)

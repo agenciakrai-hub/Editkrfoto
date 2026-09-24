@@ -202,6 +202,34 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
      CONSISTENTE: margen = `(k−1)/2·lado` (a escala 1 = 0 → no se mueve, siempre cubierto; con zoom panea
      sin franjas) y SIEMPRE limita el eje. `minZoomForFullOriginal` en relleno = 1 (no se aleja por debajo
      del cover → jamás franjas). Tests en `editor/slotPhotoView.test.js`.
+  6. Relleno NO priorizaba al sujeto (recortaba a las personas; reportado). El "centrado puro" (offset 0)
+     dejaba a las personas descentradas fuera del recorte cover. Solución CORRECTA con `object-position`:
+     `smartFillTransform` calcula el punto focal (centro de caras detectadas; si no, focalPoint del perfil
+     visual; si no, centro) y lo guarda en el transform como `focus_x/focus_y`. Los 3 renderizadores
+     aplican ese foco: SlotFrame y la miniatura vía CSS `object-position: fx% fy%`; el export
+     (`spreadRenderer.drawPhoto`) posicionando el cover con `(box - dw)·fx`. Así el relleno CUBRE siempre
+     y ENCUADRA sobre las personas, sin franjas. Escala 1 / offset 0 (el zoom+arrastre manual siguen
+     encima). Tests en `editor/smartFill.test.js` + `slotPhotoView.test.js` (8/8).
+
+PENDIENTE (consultado al usuario): módulo "Selección IA" del editor de álbum. Se excluyó en el port
+(dependía del servidor `album-engine` de Base44). El botón "Selección IA" (?view=seleccion) no muestra
+nada y la maquetación automática deja fotos "sin colocar" sin control del usuario. Falta una vista de
+selección donde ver seleccionadas/descartadas y decidir manualmente qué entra al álbum.
+
+## Selección IA del álbum — PORTADA Y CONECTADA (jun 2026)
+- Se restauró el módulo `src/modules/album/selection/*` de EditFlow (SelectionAIPage, useAiSelection,
+  aiPipeline E2–E7, ConsentPanel/ProgressPanel/ResultsPanel/ProvidersPanel, sanitizer, XMP export).
+- Ruta: `/album?project=ID&view=seleccion` (botón "Selección IA" del editor). AlbumApp restaurado.
+- EditFlow llamaba a la función de servidor Base44 `album-engine` (Gemini/Qwen/NVIDIA). Aquí se
+  reimplementó `base44.functions.invoke(name, body)` en el shim → `POST /api/{name}` con cookie de
+  sesión. Nuevo endpoint backend `POST /api/album-engine` (server.py) que resuelve las acciones
+  e3-continuity, e4-triage, e5-group, e6-moments, visual-profile, e7-assembly y providers-test usando
+  `_ai_multi_vision` (gateway de visión Emergent; tareas "seleccion"/"album"). Prompts portados de
+  entry.ts. Parseo laxo de JSON. Consentimiento por ejecución (AlbumAIConfig en IndexedDB).
+- Verificado: página renderiza (consent + diagnóstico); curl providers-test OK; e4-triage devuelve
+  análisis real de la visión. PENDIENTE de validar por el usuario una ejecución completa E2–E7 con fotos
+  reales (varias llamadas de visión). Nota: el texto de consentimiento aún menciona gemini/qwen/nvidia
+  (copia original); funcionalmente usa Emergent.
 
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.

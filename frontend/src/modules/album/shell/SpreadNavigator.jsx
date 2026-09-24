@@ -43,7 +43,7 @@ export default function SpreadNavigator({ album, spreads, selectedId, thumbs, on
                     style={{ left: `${(sl.x_mm / W) * 100}%`, top: `${(sl.y_mm / H) * 100}%`, width: `${(sl.w_mm / W) * 100}%`, height: `${(sl.h_mm / H) * 100}%` }}>
                     {th && (
                       <img src={th} draggable={false} alt="" className="h-full w-full"
-                        style={{ objectFit: view.objectFit, transform: `translate(${view.offsetXPct}%, ${view.offsetYPct}%) scale(${view.scale})`, transformOrigin: "center" }} />
+                        style={{ objectFit: view.objectFit, objectPosition: view.objectPosition, transform: `translate(${view.offsetXPct}%, ${view.offsetYPct}%) scale(${view.scale})`, transformOrigin: "center" }} />
                     )}
                   </div>
                 );

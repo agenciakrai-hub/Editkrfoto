@@ -24,8 +24,12 @@ function drawPhoto(ctx, img, box, ppm, transform, fitMode) {
   const s = (fitMode || "fit") === "fill" ? Math.max(box.w / iw, box.h / ih) : Math.min(box.w / iw, box.h / ih);
   const dw = iw * s;
   const dh = ih * s;
-  const dx = box.x + (box.w - dw) / 2;
-  const dy = box.y + (box.h - dh) / 2;
+  // Encuadre hacia el sujeto (focus_x/y, por defecto centro). Con cover elige QUÉ parte
+  // se conserva (equivale a object-position del editor); con contain equivale a centrar.
+  const fx = typeof t.focus_x === "number" ? t.focus_x : 0.5;
+  const fy = typeof t.focus_y === "number" ? t.focus_y : 0.5;
+  const dx = box.x + (box.w - dw) * fx;
+  const dy = box.y + (box.h - dh) * fy;
   const cx = box.x + box.w / 2;
   const cy = box.y + box.h / 2;
   const ox = (t.offset_x_mm || 0) * ppm;

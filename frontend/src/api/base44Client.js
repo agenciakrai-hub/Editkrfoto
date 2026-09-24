@@ -154,11 +154,26 @@ const entities = new Proxy({}, {
   },
 });
 
-// Las funciones de servidor de Base44 (p. ej. "album-engine" de la Selección IA)
-// no existen aquí. La maquetación es 100% determinista y local; la mejora visual
-// por IA es opcional y su ausencia se gestiona con try/catch en el store.
+// La Selección IA de EditFlow llamaba a la función de servidor "album-engine"
+// (Gemini/Qwen/NVIDIA). Aquí se conecta a NUESTRO gateway de visión (Emergent LLM)
+// vía el backend FastAPI: base44.functions.invoke("album-engine", body) → POST /api/album-engine.
 const functions = {
-  async invoke() { throw new Error("Función de servidor no disponible en modo local."); },
+  async invoke(name, body) {
+    const BACKEND = process.env.REACT_APP_BACKEND_URL;
+    const res = await fetch(`${BACKEND}/api/${name}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data?.error || `HTTP ${res.status}`);
+      err.response = { status: res.status, data };
+      throw err;
+    }
+    return { data };
+  },
 };
 
 export const base44 = { entities, functions };

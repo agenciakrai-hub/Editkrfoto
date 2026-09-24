@@ -196,6 +196,7 @@ export default function SlotFrame({ slot, photo, projectId, ppm, targetDpi = 300
               className="h-full w-full select-none"
               style={{
                 objectFit: view.objectFit,
+                objectPosition: view.objectPosition,
                 transform: `translate(${(t.offset_x_mm || 0) * ppm}px, ${(t.offset_y_mm || 0) * ppm}px) scale(${view.scale})`,
                 transformOrigin: "center",
                 cursor: effMode === "photo" ? HAND_GREEN : "default",

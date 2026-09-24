@@ -10,8 +10,13 @@
 
 export function slotPhotoView(slot) {
   const t = (slot && slot.transform) || {};
+  const fx = typeof t.focus_x === "number" ? t.focus_x : 0.5;
+  const fy = typeof t.focus_y === "number" ? t.focus_y : 0.5;
   return {
     objectFit: slot?.fit_mode === "fill" ? "cover" : "contain",
+    // Encuadre del cover hacia el sujeto (caras). En "fit" es irrelevante (la foto cabe
+    // entera), pero centrar es lo correcto.
+    objectPosition: slot?.fit_mode === "fill" ? `${fx * 100}% ${fy * 100}%` : "50% 50%",
     scale: t.scale ?? 1,
     // Offsets normalizados al tamaño del hueco (porcentaje): equivalen exactamente a
     // offset_mm * ppm en el lienzo, porque el <img> ocupa el 100 % del hueco.
