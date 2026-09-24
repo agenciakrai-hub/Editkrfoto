@@ -126,6 +126,26 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
   La IA fija los básicos; el preset/perfil aporta el resto. Compila OK; flujo visual se prueba con RAW reales.
 - SIGUIENTE: Fase 3 Álbum AI (maquetación automática de spreads + export PDF).
 
+## Fase 3 — Álbum AI — HECHO (sep 2026)
+- Página `AlbumStudio.jsx` (`/album`, nav "Álbum"). Local-first: elige carpeta → miniaturas rectas
+  (EXIF) + aspecto → maquetación automática en páginas dobles (spreads 2:1).
+- Motor PURO `src/lib/album/layoutEngine.js` (`planAlbum`, `templateFor`): plantillas por cantidad y
+  orientación (solo apaisado a sangre, vertical centrado, duo, trío columnas/hero, quad 2x2), portada
+  hero a sangre completa, densidad Aireado/Equilibrado/Denso (alterna nº de fotos por spread), márgenes
+  homogéneos (pad X = pad Y / 2 por el ratio 2:1). Slots en coords normalizadas [0..1]. **14 unit tests**
+  en `layoutEngine.test.js` (todas pasan). No toca los 41 snapshots del motor fotométrico.
+- `src/lib/album/albumImage.js`: `orientedCanvasFromFile` (recto por EXIF), `coverCrop` (recorte center-
+  cover), `preparePhotos` (miniatura JPEG ligera + aspecto), `thumbBase64FromFile` (para la IA).
+- `src/lib/album/albumPdf.js`: export a PDF con **jsPDF** (páginas dobles 2:1, cover-crop por slot,
+  cachea el canvas por foto). `doc.save()`.
+- Orden narrativo con IA (opcional): backend `POST /api/ai/album-order` (task `album` del gateway de
+  visión, Emergent por defecto). Recibe hasta 24 miniaturas base64, devuelve `ordered_filenames`,
+  `highlights`, `reason`. Fallback: preserva el orden original y añade las que la IA omita.
+- Verificado: 14 unit tests + curl e2e del endpoint (200) + testing agent frontend 6/6 flujos
+  (upload → spreads → densidad → orden IA → export PDF), 0 errores de consola.
+- SIGUIENTE sugerido: destacados (highlights) a página completa en la maqueta; reordenar spreads con
+  drag & drop; guardar la maqueta del álbum por proyecto/carpeta.
+
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
 - NUNCA reconectar con Base44/localhost.

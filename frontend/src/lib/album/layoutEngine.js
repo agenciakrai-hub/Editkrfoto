@@ -37,7 +37,7 @@ function insetRect([x, y, w, h], padX, padY) {
 
 function makeSpread(group, index, kind, gutter) {
   const { id, rects } = kind === "cover"
-    ? { id: "cover", rects: [[0.5, 0, 0.5, 1]] } // portada: foto en la página derecha
+    ? { id: "cover", rects: [[0, 0, 1, 1]] } // portada: foto hero a sangre completa
     : templateFor(group);
   const padX = gutter / 2, padY = gutter;
   const slots = group.slice(0, rects.length).map((photo, i) => {
