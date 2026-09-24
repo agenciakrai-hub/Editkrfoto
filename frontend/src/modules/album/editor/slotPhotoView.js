@@ -7,7 +7,6 @@
 // en la miniatura se expresan como porcentaje del hueco — la GEOMETRÍA en mm es
 // idéntica en ambos. La exportación (spreadRenderer) implementa la misma matemática
 // en canvas 2D. Ningún componente puede volver a interpretar el ajuste por su cuenta.
-import { photoRatio } from "@/modules/album/layout/layoutEngine";
 
 export function slotPhotoView(slot) {
   const t = (slot && slot.transform) || {};
@@ -61,48 +60,25 @@ export function coverPanMargins(slot, photo) {
   return { mx: Math.max(0, (k * dw - sw) / 2), my: Math.max(0, (k * dh - sh) / 2) };
 }
 
-// ZOOM MÍNIMO DINÁMICO — en modo RELLENO (cover) la foto a escala 1 cubre el
-// contenedor y sobra parte del original (recorte visual, no destructivo). Para
-// recuperar el 100 % del original hace falta alejar hasta la "escala de contención"
-// (la foto cabe entera en el contenedor, pueden aparecer huecos vacíos — CORRECTO).
-// containScale = min(w/coverW, h/coverH). Para proporciones extremas (panorámica en
-// hueco cuadrado, etc.) este valor es muy inferior a 0.3, por lo que un suelo fijo
-// impide recuperar el original. El mínimo dinámico permite alejar hasta el 90 % de
-// la contención (margen para ver el original completo), con un suelo de seguridad
-// de 0.05. En modo FIT la base ya es contención, así que 0.3 sobra y se devuelve 0.3.
-export function minZoomForFullOriginal(slot, photo) {
-  const sw = slot?.w_mm;
-  const sh = slot?.h_mm;
-  if (!(sw > 0) || !(sh > 0)) return 0.3;
-  if (slot?.fit_mode !== "fill") return 0.3;
-  const r = photoRatio(photo);
-  if (!(r > 0)) return 0.3;
-  const coverW = Math.max(sw, sh * r);
-  const coverH = Math.max(sh, sw / r);
-  const containScale = Math.min(sw / coverW, sh / coverH);
-  return Math.max(0.05, Math.min(0.3, containScale * 0.9));
+// ZOOM MÍNIMO — en modo RELLENO (cover) el mínimo es 1: la foto SIEMPRE cubre el
+// contenedor por completo (alejar por debajo dejaría franjas vacías con object-fit:
+// cover). Para reencuadrar se AMPLÍA el zoom (k>1) y se arrastra. En modo FIT (foto
+// completa) se permite alejar hasta 0.3 (la foto ya cabe entera, sin recorte).
+export function minZoomForFullOriginal(slot) {
+  return slot?.fit_mode === "fill" ? 1 : 0.3;
 }
 
-// REENCUADRE NO DESTRUCTIVO — márgenes de arrastre de la FOTO dentro del hueco
-// (modo relleno), POR EJE. El contenedor es solo una VENTANA visual sobre la
-// foto original completa (que jamás se recorta en origen):
-//   · Foto (a su zoom actual) MAYOR que el contenedor en un eje → el arrastre se
-//     limita a lo que sobra: el contenedor sigue cubierto y TODA la foto es
-//     alcanzable desplazándose hasta sus bordes.
-//   · Foto MENOR en un eje (zoom alejado por debajo de la base cover) → eje
-//     LIBRE (null): el fotógrafo coloca la foto completa donde quiera.
-export function photoPanMargins(slot, photo) {
-  const wp = photo?.width_px;
-  const hp = photo?.height_px;
-  if (!(wp > 0) || !(hp > 0)) return null;
+// REENCUADRE NO DESTRUCTIVO — márgenes de arrastre de la FOTO dentro del hueco (modo
+// relleno), POR EJE, CONSISTENTES con el render real (object-fit:cover + scale(k) +
+// translate). A escala 1 la foto ya CUBRE el hueco exactamente, así que el margen es 0
+// (arrastrar no la mueve: nunca aparecen franjas). Al ampliar el zoom (k>1) la imagen
+// ampliada sobresale (k−1)/2·lado por cada lado, y ESE es el recorrido de arrastre
+// disponible sin descubrir el fondo. Nunca devuelve null en modo relleno: el eje
+// SIEMPRE se limita (jamás libre) para que el contenedor quede siempre cubierto.
+export function photoPanMargins(slot) {
   const sw = slot?.w_mm;
   const sh = slot?.h_mm;
   if (!(sw > 0) || !(sh > 0)) return null;
-  const r = wp / hp;
-  const dw = Math.max(sw, sh * r);
-  const dh = Math.max(sh, sw / r);
   const k = slot?.transform?.scale ?? 1;
-  const mx = (k * dw - sw) / 2;
-  const my = (k * dh - sh) / 2;
-  return { mx: mx > 0 ? mx : null, my: my > 0 ? my : null };
+  return { mx: Math.max(0, ((k - 1) * sw) / 2), my: Math.max(0, ((k - 1) * sh) / 2) };
 }

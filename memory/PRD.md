@@ -196,6 +196,12 @@ mediante un **plugin nativo propio** (sin dependencias de terceros / Base44).
      centra (caras centrales conservadas). El reencuadre manual (clic en la foto) sigue disponible.
      Tests en `editor/smartFill.test.js`. Verificado en el caso "Tres columnas" (foto apaisada en
      columna alta rellena completa, sin franja). Export usa el mismo contrato.
+  5. Paneo/zoom en relleno incoherentes con el render (franja blanca al ARRASTRAR; reportado): el render
+     usa object-fit:cover + scale(k) + translate, pero `photoPanMargins` limitaba con `(k·dw−lado)/2`
+     (dims cover en mm), permitiendo arrastrar a escala 1 y descubrir el fondo. Corregido a la fórmula
+     CONSISTENTE: margen = `(k−1)/2·lado` (a escala 1 = 0 → no se mueve, siempre cubierto; con zoom panea
+     sin franjas) y SIEMPRE limita el eje. `minZoomForFullOriginal` en relleno = 1 (no se aleja por debajo
+     del cover → jamás franjas). Tests en `editor/slotPhotoView.test.js`.
 
 ## Notas críticas
 - Idioma: SIEMPRE responder en español.
