@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { AlertTriangle, Grip, ImageOff, Lock } from "lucide-react";
 import usePhotoPreview from "@/modules/album/hooks/usePhotoPreview";
-import { slotPhotoView, slotEffDpi, photoPanMargins } from "@/modules/album/editor/slotPhotoView";
+import { slotPhotoView, slotEffDpi } from "@/modules/album/editor/slotPhotoView";
 import { HAND_BLACK, HAND_GREEN } from "@/modules/album/editor/cursors";
 
 // Tiradores del contenedor en modo mano negra: los 4 lados y las 4 esquinas.
@@ -83,20 +83,33 @@ export default function SlotFrame({ slot, photo, projectId, ppm, targetDpi = 300
     if (!slot.photo_id || locked || effMode !== "photo") return;
     e.preventDefault(); e.stopPropagation(); onSelect();
     handlers.onGestureBegin?.();
+    const k = view.scale || 1;
+    // MODO RELLENO (cover): el reencuadre NO usa offset (que dejaría franjas al
+    // recortarse a 0 con zoom 100 %), sino object-position (focus_x/y). Arrastrar
+    // la foto desplaza QUÉ parte del cover se ve, y SIEMPRE cubre el hueco (jamás
+    // franjas). El recorrido disponible es exactamente el sobrante del cover.
+    if (slot.fit_mode === "fill") {
+      const fx0 = typeof t.focus_x === "number" ? t.focus_x : 0.5;
+      const fy0 = typeof t.focus_y === "number" ? t.focus_y : 0.5;
+      const r = (photo?.width_px > 0 && photo?.height_px > 0)
+        ? photo.width_px / photo.height_px
+        : slot.w_mm / slot.h_mm;
+      const sr = slot.w_mm / slot.h_mm;
+      const overXpx = (r > sr ? slot.h_mm * r - slot.w_mm : 0) * ppm * k;
+      const overYpx = (r < sr ? slot.w_mm / r - slot.h_mm : 0) * ppm * k;
+      dragWindow(e, (dx, dy) => {
+        const nfx = overXpx > 0.5 ? Math.max(0, Math.min(1, fx0 - dx / overXpx)) : fx0;
+        const nfy = overYpx > 0.5 ? Math.max(0, Math.min(1, fy0 - dy / overYpx)) : fy0;
+        handlers.onFocus?.(slot.slot_id, nfx, nfy);
+      });
+      return;
+    }
+    // MODO CONTENER (fit): la foto cabe entera; el arrastre la desplaza libremente
+    // (offset) para recolocarla dentro del hueco. La fuente original nunca se recorta.
     const bx = t.offset_x_mm || 0;
     const by = t.offset_y_mm || 0;
-    // REENCUADRE NO DESTRUCTIVO: el contenedor es una ventana visual sobre la
-    // foto ORIGINAL completa (la fuente jamás se recorta). Por eje: si la foto
-    // (a su zoom actual) sobresale del hueco, el arrastre se limita a lo que
-    // sobra (toda la foto es alcanzable hasta sus bordes); si es menor (zoom
-    // alejado), el eje queda LIBRE y el fotógrafo la coloca donde quiera.
-    const m = slot.fit_mode === "fill" ? photoPanMargins(slot, photo) : null;
     dragWindow(e, (dx, dy) => {
-      let nx = bx + dx / ppm;
-      let ny = by + dy / ppm;
-      if (m?.mx != null) nx = Math.max(-m.mx, Math.min(m.mx, nx));
-      if (m?.my != null) ny = Math.max(-m.my, Math.min(m.my, ny));
-      handlers.onPan?.(slot.slot_id, nx, ny);
+      handlers.onPan?.(slot.slot_id, bx + dx / ppm, by + dy / ppm);
     });
   };
 
