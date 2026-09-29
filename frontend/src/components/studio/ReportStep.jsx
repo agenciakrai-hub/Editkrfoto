@@ -75,8 +75,13 @@ export default function ReportStep({ report, projectId, payload, files = [], aud
       setVerification(verifyReport);
       toast.success(part > 1 ? `Descargados ${part} ZIP (divididos por tamaño)` : "Paquete descargado",
         { description: `${embedded} DNG incrustados · ${sidecars} sidecar .xmp` });
-    } catch {
-      toast.error("No se pudo generar el ZIP");
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail || err?.message;
+      console.error("generate-xmp failed", status, err);
+      toast.error("No se pudo generar el ZIP", {
+        description: status ? `Error ${status}${detail ? ": " + detail : ""}` : (detail || "Fallo de red"),
+      });
     } finally {
       setDownloading(false);
     }

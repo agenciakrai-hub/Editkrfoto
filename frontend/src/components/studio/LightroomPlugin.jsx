@@ -35,8 +35,13 @@ export default function LightroomPlugin({ projectId, payload, getPhotos, title, 
       toast.success(`${n} fotos enviadas a Lightroom`, {
         description: "En Lightroom: selecciona las fotos y usa el plugin RAW AI Studio › Sincronizar.",
       });
-    } catch {
-      toast.error("No se pudieron enviar los XMP");
+    } catch (err) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail || err?.message;
+      console.error("lr-push failed", status, err);
+      toast.error("No se pudieron enviar los XMP", {
+        description: status ? `Error ${status}${detail ? ": " + detail : ""}` : (detail || "Fallo de red"),
+      });
     } finally { setBusy(false); }
   };
 
