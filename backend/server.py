@@ -12,6 +12,7 @@ import json
 import hashlib
 import asyncio
 import zipfile
+import tempfile
 import logging
 import uuid
 import requests
@@ -906,22 +907,22 @@ def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, p
 
 
 def xmp_entries(req_or_job, camera_profile, precision):
+    """Generador perezoso de pares (nombre.xmp, contenido): nunca mantiene todos los
+    XMP en RAM a la vez (clave con catálogos grandes + preset por foto)."""
     photos = req_or_job.get("photos") or []
     creative = req_or_job.get("creative_params") or {}
     preset_xmp = req_or_job.get("preset_xmp")
-    entries = []
     if photos:
         for p in photos:
             fn = p["filename"]
             base = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].rsplit(".", 1)[0] or "foto"  # sin traversal
-            entries.append((f"{base}.xmp", build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative, preset_xmp, camera_profile, precision)))
+            yield (f"{base}.xmp", build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative, preset_xmp, camera_profile, precision))
     else:
         # compatibilidad: mismos parámetros para todas
         params = req_or_job.get("parameters") or {}
         for fn in (req_or_job.get("filenames") or []):
             base = fn.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].rsplit(".", 1)[0] or "foto"
-            entries.append((f"{base}.xmp", build_xmp(fn, params, camera_profile or "Adobe Standard", precision or "balanced")))
-    return entries
+            yield (f"{base}.xmp", build_xmp(fn, params, camera_profile or "Adobe Standard", precision or "balanced"))
 
 
 def build_zip_from_entries(entries):
@@ -931,6 +932,48 @@ def build_zip_from_entries(entries):
             zf.writestr(name, content)
     buf.seek(0)
     return buf
+
+
+def zip_entries_to_tempfile(entries):
+    """Escribe el ZIP a un archivo temporal en DISCO, una entrada a la vez, para no
+    construir el paquete completo en memoria (evita OOM del pod con catálogos grandes).
+    Devuelve (ruta_temporal, número_de_entradas)."""
+    tmp = tempfile.NamedTemporaryFile(prefix="rawai_xmp_", suffix=".zip", delete=False)
+    count = 0
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name, content in entries:
+                zf.writestr(name, content)
+                count += 1
+        tmp.flush()
+        tmp.close()
+    except Exception:
+        tmp.close()
+        try:
+            os.remove(tmp.name)
+        except OSError:
+            pass
+        raise
+    return tmp.name, count
+
+
+def stream_file_and_cleanup(path, chunk=262144):
+    """Transmite un archivo por trozos y lo elimina al terminar (o al abortarse)."""
+    def _gen():
+        try:
+            with open(path, "rb") as f:
+                while True:
+                    data = f.read(chunk)
+                    if not data:
+                        break
+                    yield data
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    return _gen()
+
 
 
 @api_router.post("/projects/{project_id}/lr-push")
@@ -947,6 +990,7 @@ async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends
     now = datetime.now(timezone.utc).isoformat()
     written = 0
     ops = []
+    BATCH = 500  # descarga los XMP a Mongo por lotes: no acumula miles en memoria
     for p in photos:
         fn = (p.get("filename") or "").strip()
         if not fn:
@@ -960,6 +1004,9 @@ async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends
              "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
             upsert=True))
         written += 1
+        if len(ops) >= BATCH:
+            await db.lr_jobs.bulk_write(ops, ordered=False)
+            ops = []
     if ops:
         await db.lr_jobs.bulk_write(ops, ordered=False)
     return {"written": written}
@@ -971,17 +1018,22 @@ async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(re
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
     data = req.model_dump()
-    entries = xmp_entries(data, req.camera_profile, req.precision_mode)
-    if not entries:
+    # Genera y comprime a DISCO (streaming), una entrada a la vez: memoria acotada
+    # aunque el catálogo tenga miles de fotos con preset por foto.
+    path, count = zip_entries_to_tempfile(xmp_entries(data, req.camera_profile, req.precision_mode))
+    if count == 0:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
         raise HTTPException(status_code=400, detail="No hay archivos en la cola")
 
-    buf = build_zip_from_entries(entries)
     await db.projects.update_one({"id": project_id}, {"$set": {
-        "status": "completed", "processed_images": len(entries),
+        "status": "completed", "processed_images": count,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }})
     safe = (doc.get("name") or "proyecto").replace(" ", "_")
-    return StreamingResponse(buf, media_type="application/zip",
+    return StreamingResponse(stream_file_and_cleanup(path), media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'})
 
 
@@ -1070,10 +1122,15 @@ async def download_cloud_job(job_id: str, user: User = Depends(get_current_user)
         raise HTTPException(status_code=409, detail="El trabajo aún no ha terminado")
     project = await db.projects.find_one({"id": job["project_id"]}, {"_id": 0})
     pname = project.get("name") if project else "proyecto"
-    entries = xmp_entries(job, job.get("camera_profile"), job.get("precision_mode"))
-    buf = build_zip_from_entries(entries)
+    path, count = zip_entries_to_tempfile(xmp_entries(job, job.get("camera_profile"), job.get("precision_mode")))
+    if count == 0:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail="No hay archivos en el trabajo")
     safe = (pname or "proyecto").replace(" ", "_")
-    return StreamingResponse(buf, media_type="application/zip",
+    return StreamingResponse(stream_file_and_cleanup(path), media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="RAWAI_{safe}_XMP.zip"'})
 
 
