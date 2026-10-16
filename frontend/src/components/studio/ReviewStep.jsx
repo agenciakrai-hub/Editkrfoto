@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ArrowRight, Star, Plus, X, Sparkles, Hand, AlertTriangle, Layers, Check, Eye, Wand2, Loader2 } from "lucide-react";
 import Thumbnail from "@/components/studio/Thumbnail";
@@ -6,6 +6,8 @@ import PhotoViewer from "@/components/studio/PhotoViewer";
 import { WARNING_LABELS } from "@/lib/burstDecision";
 import { thumbBase64 } from "@/lib/rawThumb";
 import api from "@/lib/api";
+import { applyComparison, compareWholeBurst, completedComparison } from "@/lib/burstComparison";
+import { requestSelection, selectionError } from "@/lib/selectionRequest";
 
 function Stars() {
   return (
@@ -17,6 +19,21 @@ function Stars() {
 
 export default function ReviewStep({ initialPhotos, people = [], onChange, onContinue }) {
   const [photos, setPhotos] = useState(initialPhotos);
+  const photosRef = useRef(initialPhotos);
+  const controllerRef = useRef(null);
+  const busyRef = useRef(false);
+  const [aiProgress, setAiProgress] = useState(null);
+  useEffect(() => () => controllerRef.current?.abort(), []);
+  const savePhotos = async (next) => {
+    const previous = photosRef.current;
+    photosRef.current = next;
+    setPhotos(next);
+    try { await onChange?.(next); }
+    catch (err) {
+      if (photosRef.current === next) { photosRef.current = previous; setPhotos(previous); }
+      throw err;
+    }
+  };
   const [tab, setTab] = useState("selected"); // selected | unselected
   const [viewer, setViewer] = useState(null); // { index }
 
@@ -42,59 +59,80 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
       .sort((a, b) => Number(a.id) - Number(b.id));
   }, [photos]);
 
-  const applyToggle = (id) => {
-    const next = photos.map((p) => (p.id === id ? { ...p, selectedForEdit: !p.selectedForEdit, source: "manual" } : p));
-    setPhotos(next);
-    onChange && onChange(next); // persistencia inmediata (decisión manual)
-    return next;
+  const pendingBursts = bursts.filter(b => !b.photos.some(p => p.source === "manual") && !completedComparison(b.photos));
+  const applyToggle = async (id) => {
+    if (busyRef.current) return;
+    const next = photosRef.current.map(p => p.id === id ? {...p, selectedForEdit: !p.selectedForEdit, source: "manual", selectionComparison: null} : p);
+    try { await savePhotos(next); } catch { toast.error("No se pudo guardar la decisión. Inténtalo de nuevo."); }
   };
-
-  // Comparador de ráfaga: elegir UNA toma con un clic → se selecciona esa y se descartan sus hermanas.
-  const chooseExclusive = (photo, source = "manual") => {
+  const chooseExclusive = async (photo, source = "manual") => {
+    if (busyRef.current) return;
     const bk = photo.burstId ?? photo.name;
-    const next = photos.map((p) =>
-      ((p.burstId ?? p.name) === bk)
-        ? { ...p, selectedForEdit: p.id === photo.id, source }
-        : p);
-    setPhotos(next);
-    onChange && onChange(next);
+    const next = photosRef.current.map(p => (p.burstId ?? p.name) === bk ? {...p, selectedForEdit:p.id === photo.id, isBest:p.id === photo.id, source, selectionComparison:null} : p);
+    try { await savePhotos(next); } catch { toast.error("No se pudo guardar la decisión"); }
   };
-
-  const [aiBusy, setAiBusy] = useState(null);   // burstId en proceso ("all" = todas)
-  const [aiReason, setAiReason] = useState({});  // burstId → { filename, reason }
-
-  const refineBurst = async (b, silent = false) => {
-    setAiBusy((prev) => (prev === "all" ? "all" : b.id));
+  const [aiBusy, setAiBusy] = useState(null);
+  const [aiReason, setAiReason] = useState({});
+  const compareBurst = async (b, signal) => {
+    const alive = () => { if (signal.aborted) throw new Error("Selección pausada"); };
+    const result = await compareWholeBurst(b.photos, async batch => {
+      const candidates = [];
+      for (const p of batch) {
+        alive();
+        const img = await thumbBase64(p.file, 800);
+        if (!img) throw new Error("Falta una vista previa: vuelve a elegir la carpeta original");
+        await new Promise((resolve, reject) => {
+          const image = new Image();
+          const timer = setTimeout(() => reject(new Error("No se pudo decodificar la vista previa")), 10000);
+          image.onload = () => { clearTimeout(timer); image.width > 10 && image.height > 10 ? resolve() : reject(new Error("Vista previa demasiado pequeña")); };
+          image.onerror = () => { clearTimeout(timer); reject(new Error("Vista previa no válida")); };
+          image.src = img.startsWith("data:") ? img : `data:image/jpeg;base64,${img}`;
+        });
+        candidates.push({filename: `candidate_${candidates.length + 1}`, image_base64: img});
+      }
+      const response = await requestSelection(() => api.post("/ai/select-burst", {candidates, context:"reportaje de boda"}, {signal, timeout:105000}), {
+        signal, onWait: wait => setAiProgress(p => ({...p, waiting: `${wait.message}. ${new Date(wait.retryAt).toLocaleTimeString()}`}))
+      });
+      setAiProgress(p => ({...p, waiting:null}));
+      return {winnerId:batch[candidates.findIndex(c => c.filename === response.data.best_filename)]?.id, reason:response.data.reason};
+    }, alive);
+    alive();
+    await savePhotos(applyComparison(photosRef.current, b.photos, result));
+    setAiReason(m => ({...m, [b.id]:{filename:result.winner.name, reason:result.comparison.reason}}));
+  };
+  const runComparisons = async (targets, all) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setAiBusy(all ? "all" : targets[0]?.id);
+    setAiProgress({done:0,total:targets.length});
+    let done = 0;
+    const execute = async () => {
+      for (const b of targets) {
+        if (controller.signal.aborted) throw new Error("Selección pausada");
+        await compareBurst(b, controller.signal);
+        done++;
+        setAiProgress({done,total:targets.length});
+      }
+    };
     try {
-      const cands = [];
-      for (const p of b.photos.slice(0, 8)) {
-        const img = await thumbBase64(p.file, 384);
-        if (img) cands.push({ filename: p.name, image_base64: img });
-      }
-      if (cands.length < 2) { if (!silent) toast.error("No hay suficientes miniaturas para comparar"); return; }
-      const r = await api.post("/ai/select-burst", { candidates: cands, context: "reportaje de boda" });
-      const best = b.photos.find((p) => p.name === r.data.best_filename);
-      if (best) {
-        chooseExclusive(best, "ai");
-        setAiReason((m) => ({ ...m, [b.id]: { filename: best.name, reason: r.data.reason } }));
-        if (!silent) toast.success(`IA eligió ${best.name}`, { description: r.data.reason });
-      }
+      if (navigator.locks) await navigator.locks.request("editflow:selection", {ifAvailable:true}, async lock => {
+        if (!lock) throw new Error("Ya hay una selección activa en otra pestaña");
+        await execute();
+      }); else await execute();
+      toast.success(`${done} ráfagas comparadas y guardadas`);
     } catch (err) {
-      if (!silent) toast.error(err?.response?.status === 402 ? "Tu prueba ha terminado" : "La IA no pudo analizar la ráfaga");
+      toast.error(`${selectionError(err)}. ${done} ráfagas guardadas; puedes continuar las pendientes.`);
     } finally {
-      if (!silent) setAiBusy(null);
+      setAiBusy(null);
+      busyRef.current = false;
+      controllerRef.current = null;
+      setAiProgress(null);
     }
   };
-
-  const refineAll = async () => {
-    setAiBusy("all");
-    const t = toast.loading(`Afinando ${bursts.length} ráfagas con IA…`);
-    let done = 0;
-    for (const b of bursts) { await refineBurst(b, true); done++; toast.loading(`Afinando ráfagas con IA… ${done}/${bursts.length}`, { id: t }); }
-    toast.success(`IA afinó ${done} ráfagas`, { id: t });
-    setAiBusy(null);
-  };
-
+  const refineBurst = b => runComparisons([b], false);
+  const refineAll = () => runComparisons(pendingBursts, true);
   const openViewer = (photo) => {
     setViewer({ id: photo.id });
   };
@@ -106,7 +144,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
         <div className="relative aspect-[3/2] w-full bg-zinc-900">
           <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
           <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-zinc-300 backdrop-blur">
-            {p.source === "manual" ? <><Hand className="h-3 w-3" /> Manual</> : <><Sparkles className="h-3 w-3 text-emerald-400" /> IA</>}
+            {p.source === "manual" ? <><Hand className="h-3 w-3" /> Manual</> : <><Sparkles className="h-3 w-3 text-emerald-400" /> {p.selectionComparison ? "IA comparativa" : "Análisis local"}</>}
           </span>
           {p.selectedForEdit && (
             <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-emerald-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-950" data-testid={`stars-${p.name}`}>
@@ -137,10 +175,10 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
           )}
         </div>
         {p.selectedForEdit ? (
-          <button data-testid={`remove-${p.name}`} onClick={() => applyToggle(p.id)} title="Quitar de la selección"
+          <button data-testid={`remove-${p.name}`} disabled={!!aiBusy} onClick={() => applyToggle(p.id)} title="Quitar de la selección"
             className="inline-flex shrink-0 items-center gap-1 rounded-md border border-rose-500/40 px-2 py-1 text-[11px] font-medium text-rose-300 hover:bg-rose-500/10"><X className="h-3 w-3" /> Quitar</button>
         ) : (
-          <button data-testid={`add-${p.name}`} onClick={() => applyToggle(p.id)} title="Añadir a la selección"
+          <button data-testid={`add-${p.name}`} disabled={!!aiBusy} onClick={() => applyToggle(p.id)} title="Añadir a la selección"
             className="inline-flex shrink-0 items-center gap-1 rounded-md bg-emerald-400 px-2 py-1 text-[11px] font-semibold text-zinc-950 hover:scale-[1.03]"><Plus className="h-3 w-3" /> Añadir</button>
         )}
       </div>
@@ -186,11 +224,15 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
             <p className="text-sm text-zinc-500">
               Compara las tomas de cada secuencia y elige la definitiva con un clic, o deja que la IA la elija por ti.
             </p>
-            <button data-testid="ai-refine-all-btn" onClick={refineAll} disabled={!!aiBusy}
+            <button data-testid="ai-refine-all-btn" onClick={refineAll} disabled={!!aiBusy || !pendingBursts.length}
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-500 to-sky-500 px-4 py-1.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02] disabled:opacity-50">
-              {aiBusy === "all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Afinar todas con IA
+              {aiBusy === "all" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} {pendingBursts.length === bursts.length ? "Comparar ráfagas con IA" : `Continuar pendientes (${pendingBursts.length})`}
             </button>
           </div>
+          {aiBusy && <div role="status" className="rounded-lg border border-sky-400/30 p-3 text-sm">
+            {aiProgress?.done || 0} / {aiProgress?.total || 0} ráfagas guardadas. {aiProgress?.waiting || "Comparando todas las candidatas; una ganadora por ráfaga."}
+            <button className="ml-3 underline" onClick={() => controllerRef.current?.abort()}>Pausar</button>
+          </div>}
           {bursts.map((b, bi) => (
             <div key={b.id} data-testid={`burst-${b.id}`} className="rounded-xl border border-zinc-800 bg-[#141418] p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -209,7 +251,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
               )}
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {b.photos.map((p) => (
-                  <button key={p.id} data-testid={`burst-pick-${p.name}`} onClick={() => chooseExclusive(p)}
+                  <button key={p.id} data-testid={`burst-pick-${p.name}`} disabled={!!aiBusy} onClick={() => chooseExclusive(p)}
                     className={`group overflow-hidden rounded-lg border text-left transition-all ${p.selectedForEdit ? "border-emerald-400 ring-1 ring-emerald-400/50" : "border-zinc-800 hover:border-zinc-600"}`}>
                     <div className="relative aspect-[3/2] w-full">
                       <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
@@ -263,7 +305,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
       )}
 
       <button data-testid="review-continue-btn" disabled={!selected.length}
-        onClick={() => onContinue(photos)}
+        disabled={!!aiBusy} onClick={() => onContinue(photos)}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40">
         Continuar con {selected.length} seleccionadas <ArrowRight className="h-4 w-4" />
       </button>

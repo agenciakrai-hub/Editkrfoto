@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import AppShell from "@/components/AppShell";
@@ -56,17 +56,21 @@ export default function Studio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, folderId, navigate]);
 
-  const persist = async (patch) => {
-    try { await api.patch(`${stateUrl}/state`, patch); }
-    catch (err) {
-      if (process.env.NODE_ENV === "development") console.warn("No se pudo guardar el checkpoint de estado", err);
-    }
+  const saveQueue = useRef(Promise.resolve());
+  const persist = (patch) => {
+    const pending = saveQueue.current.catch(() => {}).then(() => api.patch(`${stateUrl}/state`, patch));
+    saveQueue.current = pending;
+    return pending;
   };
-
   // finalSelection = fuente de verdad. Guarda estado + origen (ai/manual) + rating/label por foto.
   const persistFinal = (all) => persist({
     finalSelection: all.map((p) => ({
       filename: p.name,
+      relativePath: p.file?.webkitRelativePath || p.relativePath || p.name,
+      size: p.size || p.file?.size || 0,
+      lastModified: p.file?.lastModified || p.lastModified || 0,
+      burstId: p.burstId,
+      selectionComparison: p.selectionComparison || null,
       selected: !!p.selectedForEdit,
       source: p.source || "ai",
       rating: p.selectedForEdit ? 5 : 0,
@@ -100,6 +104,7 @@ export default function Studio() {
       }
     });
     toast.dismiss(t);
+    if (queue.some(p => !p.photometrics)) throw new Error("Hay fotos sin análisis válido. Revisa sus originales antes de editar.");
   };
 
   const buildPayload = () => {
@@ -177,8 +182,18 @@ export default function Studio() {
               const all = analyzeFolder(f);
               if (finalSel.length) {
                 // Restaurar decisiones finales (manual prevalece) sin re-ejecutar la IA.
-                const byName = new Map(finalSel.map((x) => [x.filename, x]));
-                all.forEach((p) => { const s = byName.get(p.name); if (s) { p.selectedForEdit = !!s.selected; p.source = s.source || "ai"; } else { p.selectedForEdit = false; p.source = "ai"; } });
+                const identity = p => JSON.stringify([p.relativePath || p.file?.webkitRelativePath || p.filename || p.name, p.size || 0, p.lastModified || p.file?.lastModified || 0]);
+                const byIdentity = new Map(finalSel.filter(x => x.size).map(x => [identity(x),x]));
+                const legacy = new Map(finalSel.filter(x => !x.size).map(x => [x.filename,x]));
+                all.forEach((p) => {
+                  const s = byIdentity.get(identity(p)) || legacy.get(p.name);
+                  const sameFile = s && (!s.size || (s.size === p.size && s.relativePath === (p.file?.webkitRelativePath || p.name) && s.lastModified === p.file?.lastModified));
+                  if (sameFile) {
+                    p.selectedForEdit = !!s.selected; p.source = s.source || "ai";
+                    if (s.burstId != null) p.burstId = s.burstId;
+                    p.selectionComparison = s.selectionComparison || null;
+                  } else { p.selectedForEdit = false; p.source = "ai"; }
+                });
               } else {
                 const set = new Set(savedNames);
                 all.forEach((p) => { p.selectedForEdit = set.has(p.name); p.source = "ai"; });
@@ -206,11 +221,12 @@ export default function Studio() {
 
         {step === "review" && (
           <ReviewStep initialPhotos={photos} people={people}
-            onChange={(all) => { setPhotos(all); persistFinal(all); }}
+            onChange={async (all) => { await persistFinal(all); setPhotos(all); }}
             onContinue={async (all) => {
               setPhotos(all);
               const queue = all.filter((x) => x.selectedForEdit);
-              await ensureMetrics(queue); // recalcula fotometría/color si falta (p.ej. selección reanudada) → básicos IA reales
+              try { await ensureMetrics(queue); }
+              catch (err) { toast.error(err.message); return; }
               setSendPhotos([...queue]);
               await persistFinal(all);
               setStep("style");

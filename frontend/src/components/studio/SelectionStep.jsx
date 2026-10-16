@@ -80,10 +80,10 @@ export default function SelectionStep({ files, onContinue }) {
 
   return (
     <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-6" data-testid="selection-result">
-      <h2 className="font-display text-lg font-semibold">Selección IA completada</h2>
+      <h2 className="font-display text-lg font-semibold">Análisis local completado</h2>
       <p className="mt-1.5 text-sm text-zinc-500">
-        La IA agrupó las secuencias por similitud y eligió la toma más nítida y mejor expuesta de cada una.
-        Cuando el resultado es ambiguo, marca más de una para que tú decidas en la revisión.
+        El análisis local agrupó las secuencias por similitud y propone las tomas más nítidas y mejor expuestas.
+        En «Revisar selección» → «Por ráfaga» puedes comparar todas las candidatas con el modelo de IA configurado y guardar una sola ganadora por ráfaga.
       </p>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">

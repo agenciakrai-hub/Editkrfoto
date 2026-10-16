@@ -1,3 +1,4 @@
+from ai_contracts import parse_burst_choice, selected_model
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Body
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -1917,10 +1918,10 @@ def _mask_key(k: str) -> str:
     return "••••••" if len(k) <= 8 else f"{k[:4]}…{k[-4:]}"
 
 EMERGENT_PROVIDER = {
-    "id": "emergent", "name": "Emergent IA (gratis)", "builtin": True, "enabled": True,
+    "id": "emergent", "name": "Emergent IA", "builtin": True, "enabled": True,
     "endpoint": "", "has_key": True, "masked_key": "incluida",
     "available_models": ["gpt-5.4", "claude-sonnet-4-6", "gemini-3-flash-preview"],
-    "note": "Incluida sin configuración. Visión para selección y ajustes.",
+    "note": "Conexión integrada. El consumo depende de tu cuenta de Emergent.",
 }
 AI_TASKS = ("seleccion", "ajustes", "album")
 
@@ -2018,14 +2019,36 @@ async def ai_delete_provider(pid: str, user: User = Depends(require_owner)):
 @api_router.get("/ai/config")
 async def ai_get_config(user: User = Depends(get_current_user)):
     cfg = await db.ai_config.find_one({"id": "singleton"}, {"_id": 0}) or {}
-    return {t: cfg.get(t, "emergent") for t in AI_TASKS}
+    return {**{t: cfg.get(t, "emergent") for t in AI_TASKS}, **{f"model_{t}": cfg.get(f"model_{t}", "") for t in AI_TASKS}}
 
 @api_router.put("/ai/config")
 async def ai_set_config(body: Dict[str, Any], user: User = Depends(require_owner)):
+    current = await db.ai_config.find_one({"id": "singleton"}) or {}
     patch = {t: str(body[t]).strip() for t in AI_TASKS if t in body and isinstance(body[t], str)}
+    for task in AI_TASKS:
+        key = f"model_{task}"
+        if key in body:
+            patch[key] = str(body[key] or "").strip()
+        elif task in patch and patch[task] != current.get(task, "emergent"):
+            patch[key] = ""
+        active = patch.get(task, current.get(task, "emergent"))
+        if active == "emergent":
+            available = EMERGENT_PROVIDER["available_models"]
+            assigned = available
+        elif active.startswith("custom:"):
+            rec = await db.ai_providers.find_one({"id": active.split(":", 1)[1]})
+            if not rec or not rec.get("enabled", True):
+                raise HTTPException(400, "Proveedor no disponible")
+            available, assigned = rec.get("available_models", []), rec.get(f"{task}_models", [])
+        else:
+            raise HTTPException(400, "Proveedor desconocido")
+        explicit = patch.get(key, current.get(key))
+        if explicit:
+            try: selected_model({}, task, assigned, available, explicit)
+            except ValueError as exc: raise HTTPException(400, str(exc))
     await db.ai_config.update_one({"id": "singleton"}, {"$set": {"id": "singleton", **patch}}, upsert=True)
     cfg = await db.ai_config.find_one({"id": "singleton"}, {"_id": 0})
-    return {t: cfg.get(t, "emergent") for t in AI_TASKS}
+    return {**{t: cfg.get(t, "emergent") for t in AI_TASKS}, **{f"model_{t}": cfg.get(f"model_{t}", "") for t in AI_TASKS}}
 
 class VisionBody(BaseModel):
     task: str = "seleccion"
@@ -2035,61 +2058,63 @@ class VisionBody(BaseModel):
 
 @api_router.post("/ai/vision")
 async def ai_vision(body: VisionBody, user: User = Depends(require_access)):
-    """Gateway de visión: enruta a Emergent (gratis) o al proveedor propio activo para la tarea."""
-    b64 = re.sub(r"^data:image/[a-z+]+;base64,", "", body.image_base64)
+    if body.task not in AI_TASKS:
+        raise HTTPException(400, "Herramienta desconocida")
+    text = await _ai_multi_vision(body.task, "Eres un experto en fotografía. Responde conciso.", body.prompt, [body.image_base64], body.model)
     cfg = await db.ai_config.find_one({"id": "singleton"}) or {}
-    active = cfg.get(body.task, "emergent")
-    if active and active.startswith("custom:"):
-        rec = await db.ai_providers.find_one({"id": active.split(":", 1)[1]})
-        if rec and rec.get("api_key"):
-            model = body.model or (rec.get(f"{body.task}_models") or rec.get("available_models") or ["gpt-4o"])[0]
-            try:
-                r = requests.post(f"{rec['endpoint']}/chat/completions",
-                    headers={"Authorization": f"Bearer {rec['api_key']}", "Content-Type": "application/json"},
-                    json={"model": model, "max_tokens": 700, "messages": [{"role": "user", "content": [
-                        {"type": "text", "text": body.prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}]},
-                    timeout=60)
-                content = r.json()["choices"][0]["message"]["content"]
-                return {"provider": rec["name"], "model": model, "text": content}
-            except Exception as e:
-                raise HTTPException(status_code=502, detail=f"Proveedor propio falló: {str(e)[:160]}")
-    # Emergent (gratis, por defecto)
-    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-    prov, model = ("openai", body.model or "gpt-5.4")
-    if model.startswith("claude"): prov = "anthropic"
-    elif model.startswith("gemini"): prov = "gemini"
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"vision-{uuid.uuid4().hex[:8]}",
-                   system_message="Eres un asistente experto en fotografía de bodas. Responde conciso.").with_model(prov, model)
-    text = await chat.send_message(UserMessage(text=body.prompt, file_contents=[ImageContent(image_base64=b64)]))
-    return {"provider": "Emergent IA", "model": model, "text": text}
-
-
-async def _ai_multi_vision(task: str, system: str, prompt: str, images_b64: list, model: Optional[str] = None) -> str:
+    return {"provider": cfg.get(body.task, "emergent"), "model": body.model or cfg.get(f"model_{body.task}", ""), "text": text}
+async def _ai_multi_vision(task: str, system: str, prompt: str, images_b64: list, model: Optional[str] = None, schema=None) -> str:
+    if task not in AI_TASKS:
+        raise HTTPException(400, "Herramienta desconocida")
     cfg = await db.ai_config.find_one({"id": "singleton"}) or {}
     active = cfg.get(task, "emergent")
     imgs = [re.sub(r"^data:image/[a-z+]+;base64,", "", b) for b in images_b64 if b]
     if active and active.startswith("custom:"):
         rec = await db.ai_providers.find_one({"id": active.split(":", 1)[1]})
-        if rec and rec.get("api_key"):
-            m = model or (rec.get(f"{task}_models") or rec.get("available_models") or ["gpt-4o"])[0]
-            content = [{"type": "text", "text": prompt}] + [
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b}"}} for b in imgs]
-            r = requests.post(f"{rec['endpoint']}/chat/completions",
-                headers={"Authorization": f"Bearer {rec['api_key']}", "Content-Type": "application/json"},
-                json={"model": m, "max_tokens": 500, "messages": [
-                    {"role": "system", "content": system}, {"role": "user", "content": content}]},
-                timeout=90)
-            return r.json()["choices"][0]["message"]["content"]
+        if not rec or not rec.get("enabled", True) or not rec.get("api_key"):
+            raise HTTPException(400, "El proveedor activo no está disponible. Revisa su configuración.")
+        try:
+            m = selected_model(cfg, task, rec.get(f"{task}_models", []), rec.get("available_models", []), model)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        content = [{"type": "text", "text": prompt}] + [
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b}"}} for b in imgs]
+        payload = {"model": m, "max_tokens": 4096, "messages": [
+            {"role": "system", "content": system}, {"role": "user", "content": content}]}
+        if schema:
+            payload["max_tokens"] = 2048
+        if "integrate.api.nvidia.com" in rec["endpoint"] and m == "google/diffusiongemma-26b-a4b-it":
+            payload.update(chat_template_kwargs={"enable_thinking": False}, temperature=0)
+            if schema:
+                payload["response_format"] = {"type": "json_schema", "json_schema": {"name": "burst_choice", "strict": True, "schema": schema}}
+        try:
+            r = await asyncio.to_thread(requests.post, f"{rec['endpoint']}/chat/completions",
+                headers={"Authorization": f"Bearer {rec['api_key']}", "Content-Type": "application/json"}, json=payload, timeout=(10, 90))
+        except requests.Timeout:
+            raise HTTPException(504, "provider_timeout: tiempo de espera agotado; resultados guardados conservados")
+        except requests.RequestException:
+            raise HTTPException(502, "provider_connection: no se pudo conectar con el proveedor")
+        if not r.ok:
+            status = r.status_code if r.status_code in (400, 401, 402, 403, 408, 429, 500, 502, 503, 504) else 502
+            headers = {"Retry-After": r.headers["Retry-After"]} if r.headers.get("Retry-After") else None
+            raise HTTPException(status, f"provider_http_{r.status_code}: el proveedor no completó la petición", headers=headers)
+        try:
+            msg = r.json()["choices"][0]["message"]["content"]
+            if not isinstance(msg, str) or not msg.strip(): raise ValueError()
+            return msg
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise HTTPException(502, "invalid_comparison: el proveedor devolvió una respuesta vacía o incompatible")
+    if active != "emergent":
+        raise HTTPException(400, "Proveedor desconocido")
     from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
-    prov, m = ("openai", model or "gpt-5.4")
-    if m.startswith("claude"): prov = "anthropic"
-    elif m.startswith("gemini"): prov = "gemini"
-    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"sel-{uuid.uuid4().hex[:8]}",
-                   system_message=system).with_model(prov, m)
-    return await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=b) for b in imgs]))
-
-
+    try: m = selected_model(cfg, task, EMERGENT_PROVIDER["available_models"], EMERGENT_PROVIDER["available_models"], model)
+    except ValueError as exc: raise HTTPException(400, str(exc))
+    prov = "anthropic" if m.startswith("claude") else "gemini" if m.startswith("gemini") else "openai"
+    chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"sel-{uuid.uuid4().hex[:8]}", system_message=system).with_model(prov, m)
+    try:
+        return await asyncio.wait_for(chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=b) for b in imgs])), timeout=90)
+    except asyncio.TimeoutError:
+        raise HTTPException(504, "provider_timeout: tiempo de espera agotado; resultados guardados conservados")
 class BurstCandidate(BaseModel):
     filename: str
     image_base64: str
@@ -2101,29 +2126,21 @@ class BurstSelectBody(BaseModel):
 @api_router.post("/ai/select-burst")
 async def ai_select_burst(body: BurstSelectBody, user: User = Depends(require_access)):
     """La IA de visión elige la mejor toma de una ráfaga (ojos abiertos, foco en la cara, expresión)."""
-    cand = body.candidates[:8]
-    if len(cand) < 2:
-        raise HTTPException(status_code=400, detail="Se necesitan al menos 2 tomas")
-    listing = "\n".join(f"{i+1}. {c.filename}" for i, c in enumerate(cand))
-    system = ("Eres un editor profesional de fotografía de bodas experto en 'culling'. "
-              "Comparas tomas casi idénticas de una ráfaga y eliges la mejor.")
-    prompt = (f"Estas son {len(cand)} tomas de la MISMA ráfaga, en este orden:\n{listing}\n\n"
-              + (f"Contexto: {body.context}\n\n" if body.context else "")
-              + "Elige la MEJOR priorizando: ojos abiertos (sin parpadeos), foco nítido en la cara, "
-              "mejor expresión y postura, y ausencia de defectos. Responde SOLO con JSON válido: "
-              '{"best": <número 1..N>, "reason": "<motivo breve en español>"}.')
-    raw = await _ai_multi_vision("seleccion", system, prompt, [c.image_base64 for c in cand])
-    m = re.search(r"\{.*\}", raw or "", re.S)
-    try:
-        data = json.loads(m.group(0)) if m else {}
-    except Exception:
-        data = {}
-    idx = int(data.get("best", 1))
-    idx = max(1, min(len(cand), idx))
-    return {"best_filename": cand[idx - 1].filename, "index": idx,
-            "reason": (data.get("reason") or "").strip()[:280], "raw": (raw or "")[:400]}
-
-
+    cand = body.candidates
+    if not 2 <= len(cand) <= 8:
+        raise HTTPException(400, "Envía entre 2 y 8 candidatas por comparación")
+    if len({c.filename for c in cand}) != len(cand) or any(not c.image_base64 for c in cand):
+        raise HTTPException(400, "Candidatas duplicadas o sin vista previa")
+    system = "Eres un editor profesional de fotografía. Compara todas las candidatas y elige una sola ganadora."
+    prompt = (f"Compara estas {len(cand)} fotos, numeradas según su orden de imagen. "
+              "Prioriza ojos abiertos, nitidez del sujeto, expresión, postura y ausencia de defectos. "
+              'Devuelve SOLO JSON {"best":1,"reason":"motivo breve en español"}. '
+              "best debe ser un entero entre 1 y " + str(len(cand)) + ".")
+    schema = {"type": "object", "properties": {"best": {"type": "integer", "minimum": 1, "maximum": len(cand)}, "reason": {"type": "string"}}, "required": ["best", "reason"], "additionalProperties": False}
+    raw = await _ai_multi_vision("seleccion", system, prompt, [c.image_base64 for c in cand], schema=schema)
+    try: idx, reason = parse_burst_choice(raw, len(cand))
+    except ValueError as exc: raise HTTPException(502, str(exc))
+    return {"best_filename": cand[idx - 1].filename, "index": idx, "reason": reason, "comparison_version": "burst-winner-v2"}
 class AlbumPhoto(BaseModel):
     filename: str
     image_base64: str

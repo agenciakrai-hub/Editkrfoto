@@ -18,6 +18,7 @@ export default function AIProviders() {
   const [denied, setDenied] = useState(false);
   const [form, setForm] = useState({ endpoint: "", api_key: "", name: "" });
   const [adding, setAdding] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
 
   const load = async () => {
     try {
@@ -36,7 +37,7 @@ export default function AIProviders() {
   const setActive = async (task, value) => {
     const next = { ...config, [task]: value };
     setConfig(next);
-    try { await api.put("/ai/config", { [task]: value }); toast.success("Proveedor activo actualizado"); }
+    try { await api.put("/ai/config", { [task]: value }); await load(); toast.success("Proveedor activo actualizado"); }
     catch { toast.error("No se pudo guardar"); load(); }
   };
 
@@ -89,10 +90,30 @@ export default function AIProviders() {
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-400/15 ring-1 ring-emerald-400/40"><Cpu className="h-5 w-5 text-emerald-400" /></div>
         <div>
           <h1 className="font-display text-2xl font-semibold">Proveedores de IA</h1>
-          <p className="text-sm text-zinc-500">Elige qué IA usa cada herramienta. Emergent es gratis; puedes añadir proveedores de pago.</p>
+          <p className="text-sm text-zinc-500">Elige qué IA usa cada herramienta. Conserva tu proveedor y elige el modelo de cada herramienta. El consumo depende de cada servicio.</p>
         </div>
       </div>
 
+      <div className="mt-6 rounded-xl border border-zinc-800 p-5" data-testid="active-task-models">
+        <h2 className="font-semibold">Modelo por herramienta</h2>
+        <p className="mt-1 text-xs text-zinc-400">Selección compara imágenes. Ajustes conserva el motor local y usa este modelo solo en las funciones remotas. No se cambia de proveedor automáticamente.</p>
+        {TASKS.map(t => {
+          const active = config[t.key] || "emergent";
+          const provider = active === "emergent" ? builtin : providers.find(p => `custom:${p.id}` === active);
+          const assigned = provider?.[`${t.key}_models`] || [];
+          const models = assigned.length ? assigned : provider?.available_models || [];
+          return <label key={t.key} className="mt-3 block text-sm">{t.label} · {provider?.name || "Proveedor no disponible"}
+            <select data-testid={`active-model-${t.key}`} value={config[`model_${t.key}`] || ""} className="mt-1 block w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2" onChange={async e => {
+              const model = e.target.value;
+              try { const r = await api.put("/ai/config", {[`model_${t.key}`]:model}); setConfig(r.data); toast.success("Modelo guardado"); }
+              catch (err) { toast.error(err?.response?.data?.detail || "No se pudo guardar el modelo"); }
+            }}>
+              <option value="">Mantener predeterminado ({models[0] || "sin modelos"})</option>
+              {models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>;
+        })}
+      </div>
       <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-5" data-testid="builtin-provider">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -108,7 +129,7 @@ export default function AIProviders() {
       </div>
 
       <form onSubmit={addProvider} className="mt-6 rounded-xl border border-zinc-800 bg-[#141418] p-5" data-testid="add-provider-form">
-        <h3 className="font-display text-base font-semibold">Añadir proveedor de pago</h3>
+        <h3 className="font-display text-base font-semibold">Añadir proveedor compatible</h3>
         <p className="mt-1 text-xs text-zinc-500">Compatible con OpenAI (OpenRouter, Gemini, Qwen, NVIDIA…). Endpoint + API key.</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <input data-testid="provider-endpoint-input" value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })}
@@ -122,6 +143,7 @@ export default function AIProviders() {
         </div>
       </form>
 
+      <input aria-label="Buscar modelos" value={modelSearch} onChange={e => setModelSearch(e.target.value)} placeholder="Buscar modelos por nombre" className="mt-4 w-full rounded-lg border border-zinc-700 bg-zinc-900 p-2 text-sm" />
       {providers.map((p) => (
         <div key={p.id} data-testid={`provider-${p.id}`} className="mt-4 rounded-xl border border-zinc-800 bg-[#141418] p-5">
           <div className="flex items-center justify-between">
@@ -143,7 +165,7 @@ export default function AIProviders() {
                 <div key={t.key} className="text-xs">
                   <span className="text-zinc-500">{t.label}:</span>
                   <div className="mt-1 flex flex-wrap gap-1.5">
-                    {p.available_models.slice(0, 40).map((m) => {
+                    {p.available_models.filter(m => m.toLowerCase().includes(modelSearch.toLowerCase())).map((m) => {
                       const on = (p[`${t.key}_models`] || []).includes(m);
                       return (
                         <button key={m} onClick={() => toggleModel(p, t.key, m)}
