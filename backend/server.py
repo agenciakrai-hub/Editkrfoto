@@ -450,7 +450,7 @@ async def lr_push(body: LrPushBody, user: User = Depends(require_access)):
         # una entrada pendiente por (usuario, nombre de archivo): la última sustituye a la anterior.
         await db.lr_jobs.update_one(
             {"user_id": user.user_id, "filename": fn},
-            {"$set": {"user_id": user.user_id, "filename": fn, "xmp_content": xmp,
+            {"$set": {"user_id": user.user_id, "filename": fn, "filename_lc": fn.lower(), "xmp_content": xmp,
                       "status": "pending", "updated_at": now},
              "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
             upsert=True,
@@ -458,13 +458,40 @@ async def lr_push(body: LrPushBody, user: User = Depends(require_access)):
         written += 1
     return {"written": written}
 
+class LrPendingQuery(BaseModel):
+    filenames: List[str] = Field(default_factory=list, max_length=500)
+
 @api_router.get("/lr/pending")
 async def lr_pending(request: Request):
+    # Plugin v1.0 (legado): respuesta en streaming, un documento cada vez, sin cargar todo en memoria.
     user_id = await _user_from_lr_token(request)
-    docs = await db.lr_jobs.find(
+    cursor = db.lr_jobs.find(
         {"user_id": user_id, "status": "pending"},
         {"_id": 0, "id": 1, "filename": 1, "xmp_content": 1},
-    ).to_list(5000)
+    ).sort("updated_at", -1).limit(5000).batch_size(100)
+
+    async def _gen():
+        yield b'{"jobs":['
+        n = 0
+        async for d in cursor:
+            yield (b"," if n else b"") + json.dumps(d, ensure_ascii=False).encode("utf-8")
+            n += 1
+        yield f'],"count":{n}}}'.encode()
+    return StreamingResponse(_gen(), media_type="application/json")
+
+@api_router.post("/lr/pending")
+async def lr_pending_batch(body: LrPendingQuery, request: Request):
+    # Plugin v1.1+: solo los XMP de las fotos seleccionadas, por lotes pequeños.
+    user_id = await _user_from_lr_token(request)
+    names = [n.strip() for n in body.filenames if n and n.strip()]
+    if not names:
+        return {"jobs": [], "count": 0}
+    lc = list({n.lower() for n in names})
+    docs = await db.lr_jobs.find(
+        {"user_id": user_id, "status": "pending",
+         "$or": [{"filename_lc": {"$in": lc}}, {"filename": {"$in": names}}]},
+        {"_id": 0, "id": 1, "filename": 1, "xmp_content": 1},
+    ).to_list(len(names) * 2)
     return {"jobs": docs, "count": len(docs)}
 
 PLUGIN_DIR = ROOT_DIR / "lightroom-plugin" / "rawai_studio.lrplugin"
@@ -1000,7 +1027,7 @@ async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends
                               preset_xmp, req.camera_profile, req.precision_mode)
         ops.append(pymongo.UpdateOne(
             {"user_id": user.user_id, "filename": fn},
-            {"$set": {"user_id": user.user_id, "filename": fn, "xmp_content": xmp,
+            {"$set": {"user_id": user.user_id, "filename": fn, "filename_lc": fn.lower(), "xmp_content": xmp,
                       "status": "pending", "updated_at": now},
              "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
             upsert=True))
@@ -2328,6 +2355,8 @@ logger = logging.getLogger(__name__)
 async def reap_stuck_jobs():
     # Tras un reinicio, las tareas en memoria se pierden: marca como 'failed' todo lo que quedó a medias.
     now = datetime.now(timezone.utc).isoformat()
+    await db.lr_jobs.create_index([("user_id", 1), ("status", 1), ("filename_lc", 1)])
+    await db.lr_jobs.create_index([("user_id", 1), ("filename", 1)])
     await db.cloud_jobs.update_many(
         {"status": {"$in": ["queued", "processing"]}},
         {"$set": {"status": "failed", "error_message": "Interrumpido por reinicio del servidor. Vuelve a enviarlo.", "updated_at": now}},

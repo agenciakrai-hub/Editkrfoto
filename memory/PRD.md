@@ -248,3 +248,10 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
 - Cambios de fotometría deben ir gated para no romper los 41 snapshots.
 - DOS entornos: PREVIEW (dev, editable) y PRODUCCIÓN (https://edit.krfoto.com, sin acceso directo;
   usar send_to_deployer para RCA/deploy).
+
+## 2026-06 — Fix error 520 en sincronización del plugin Lightroom
+- Causa: GET /api/lr/pending devolvía TODOS los XMP pendientes (hasta 5000, decenas de MB) en una sola respuesta JSON → memoria/timeout en pod 512Mi → 520 de Cloudflare.
+- GET /api/lr/pending ahora en streaming (compatibilidad con plugin v1.0).
+- Nuevo POST /api/lr/pending {filenames[]} (máx 500) → solo los XMP de las fotos seleccionadas; match insensible a mayúsculas (campo filename_lc).
+- Índices lr_jobs creados al arrancar.
+- Plugin v1.1: lotes de 150, reintentos, muestra código HTTP en errores. El usuario debe reinstalar el plugin.

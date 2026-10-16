@@ -3,14 +3,15 @@ local LrDialogs = import "LrDialogs"
 local LrHttp = import "LrHttp"
 local LrPrefs = import "LrPrefs"
 local LrTasks = import "LrTasks"
-local LrFileUtils = import "LrFileUtils"
 local LrPathUtils = import "LrPathUtils"
 local LrFunctionContext = import "LrFunctionContext"
 local LrProgressScope = import "LrProgressScope"
 
 local prefs = LrPrefs.prefsForPlugin()
 local JSON = require "json"
+local BATCH = 150
 
+-- Devuelve (cuerpo, codigoHTTP)
 local function apiCall(method, path, body)
     local base = (prefs.baseUrl or "https://edit.krimagina.com"):gsub("/+$", "")
     local url = base .. "/api" .. path
@@ -20,11 +21,29 @@ local function apiCall(method, path, body)
     }
     local resp, hdrs
     if method == "POST" then
-        resp, hdrs = LrHttp.post(url, body or "{}", headers)
+        resp, hdrs = LrHttp.post(url, body or "{}", headers, "POST", 120)
     else
-        resp, hdrs = LrHttp.get(url, headers)
+        resp, hdrs = LrHttp.get(url, headers, 120)
     end
-    return resp
+    local status = hdrs and hdrs.status or nil
+    return resp, status
+end
+
+-- Pide al servidor los XMP de un lote de nombres; reintenta 2 veces ante fallos transitorios.
+local function fetchBatch(names)
+    local payload = JSON.encode({ filenames = names })
+    local lastStatus
+    for attempt = 1, 3 do
+        local raw, status = apiCall("POST", "/lr/pending", payload)
+        lastStatus = status
+        if raw and (status == nil or status == 200) then
+            local ok, data = pcall(function() return JSON.decode(raw) end)
+            if ok and data and data.jobs then return data.jobs, nil end
+        end
+        if status == 401 then return nil, "Token inválido (401). Copia de nuevo el token desde la web." end
+        LrTasks.sleep(2 * attempt)
+    end
+    return nil, "Error del servidor" .. (lastStatus and (" " .. tostring(lastStatus)) or " (sin respuesta)") .. ". Inténtalo de nuevo en un minuto."
 end
 
 LrTasks.startAsyncTask(function()
@@ -40,62 +59,67 @@ LrTasks.startAsyncTask(function()
             return
         end
 
-        -- 1) Descarga los XMP pendientes de la cuenta.
-        local raw = apiCall("GET", "/lr/pending")
-        if not raw then
-            LrDialogs.message("RAW AI Studio", "No se pudo conectar con el servidor. Revisa URL/token.", "error")
-            return
-        end
-        local ok, data = pcall(function() return JSON.decode(raw) end)
-        if not ok or not data or not data.jobs then
-            LrDialogs.message("RAW AI Studio", "Respuesta inválida del servidor.", "error")
-            return
-        end
-
-        -- Indexa por nombre de archivo (en minúsculas).
-        local byName = {}
-        for _, job in ipairs(data.jobs) do
-            byName[(job.filename or ""):lower()] = job
-        end
-
         local progress = LrProgressScope { title = "RAW AI Studio: sincronizando…" }
-        local applied, missing, doneIds = 0, 0, {}
+        local applied, missing, errMsg = 0, 0, nil
+        local total = #photos
 
-        for i, photo in ipairs(photos) do
-            local name = (photo:getFormattedMetadata("fileName") or ""):lower()
-            local job = byName[name]
-            if job and job.xmp_content then
-                local rawPath = photo:getRawMetadata("path")
-                if rawPath then
-                    local dir = LrPathUtils.parent(rawPath)
-                    local baseNoExt = LrPathUtils.removeExtension(LrPathUtils.leafName(rawPath))
-                    local xmpPath = LrPathUtils.child(dir, baseNoExt .. ".xmp")
-                    local fh = io.open(xmpPath, "w")
-                    if fh then
-                        fh:write(job.xmp_content)
-                        fh:close()
-                        catalog:withWriteAccessDo("readMeta", function()
-                            photo:readMetadata()
-                        end, { timeout = 30 })
-                        applied = applied + 1
-                        doneIds[#doneIds + 1] = job.id
-                    end
-                end
-            else
-                missing = missing + 1
-            end
-            progress:setPortionComplete(i, #photos)
+        for start = 1, total, BATCH do
             if progress:isCanceled() then break end
+            local chunk, names = {}, {}
+            for i = start, math.min(start + BATCH - 1, total) do
+                local photo = photos[i]
+                local name = photo:getFormattedMetadata("fileName") or ""
+                chunk[#chunk + 1] = { photo = photo, lc = name:lower() }
+                names[#names + 1] = name
+            end
+
+            local jobs, err = fetchBatch(names)
+            if not jobs then errMsg = err; break end
+
+            local byName = {}
+            for _, job in ipairs(jobs) do
+                byName[(job.filename or ""):lower()] = job
+            end
+
+            local doneIds = {}
+            for k, item in ipairs(chunk) do
+                local job = byName[item.lc]
+                if job and job.xmp_content then
+                    local rawPath = item.photo:getRawMetadata("path")
+                    if rawPath then
+                        local dir = LrPathUtils.parent(rawPath)
+                        local baseNoExt = LrPathUtils.removeExtension(LrPathUtils.leafName(rawPath))
+                        local xmpPath = LrPathUtils.child(dir, baseNoExt .. ".xmp")
+                        local fh = io.open(xmpPath, "w")
+                        if fh then
+                            fh:write(job.xmp_content)
+                            fh:close()
+                            catalog:withWriteAccessDo("readMeta", function()
+                                item.photo:readMetadata()
+                            end, { timeout = 30 })
+                            applied = applied + 1
+                            doneIds[#doneIds + 1] = job.id
+                        end
+                    end
+                else
+                    missing = missing + 1
+                end
+                progress:setPortionComplete(start + k - 1, total)
+            end
+
+            if #doneIds > 0 then
+                apiCall("POST", "/lr/complete", JSON.encode({ ids = doneIds }))
+            end
         end
         progress:done()
 
-        -- 2) Marca como completados en el servidor.
-        if #doneIds > 0 then
-            apiCall("POST", "/lr/complete", JSON.encode({ ids = doneIds }))
+        local msg = string.format("Aplicadas: %d\nSin coincidencia: %d", applied, missing)
+        if errMsg then
+            LrDialogs.message("RAW AI Studio", msg .. "\n\n" .. errMsg, "error")
+            return
         end
-
         LrDialogs.message("RAW AI Studio",
-            string.format("Aplicadas: %d\nSin coincidencia: %d\n\nNota: en archivos DNG, Lightroom lee el XMP incrustado; los sidecar .xmp funcionan en RAW nativos (CR3/NEF/ARW).", applied, missing),
+            msg .. "\n\nNota: en archivos DNG, Lightroom lee el XMP incrustado; los sidecar .xmp funcionan en RAW nativos (CR3/NEF/ARW).",
             "info")
     end)
 end)
