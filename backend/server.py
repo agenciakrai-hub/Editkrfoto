@@ -14,6 +14,7 @@ import hashlib
 import asyncio
 import zipfile
 import tempfile
+import functools
 import logging
 import uuid
 import requests
@@ -979,17 +980,22 @@ def _set_xmp_meta(xmp):
     return xmp
 
 
+@functools.lru_cache(maxsize=4)
+def _prepare_preset(preset_xmp):
+    # 1) ELIMINA del preset cualquier ajuste de los 13 básicos (+ WhiteBalance).
+    xmp = _strip_crs_attrs(preset_xmp, STRIP_CRS_NAMES)
+    # 1a) QUITA el perfil embebido del preset (Look/CameraProfile) → gana el SELECCIONADO.
+    xmp = _remove_profile(xmp)
+    # 1b) CONVIERTE preset-template → ajustes aplicados. DESPUÉS de quitar el Look para no corromper su UUID.
+    return _strip_crs_attrs(xmp, PRESET_WRAPPER_NAMES)
+
+
 def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, precision):
     # AISLAMIENTO ESTRICTO: los 13 básicos son propiedad EXCLUSIVA del Motor IA.
     ai = ai or {}
     if preset_xmp:
-        # 1) ELIMINA del preset cualquier ajuste de los 13 básicos (+ WhiteBalance).
-        xmp = _strip_crs_attrs(preset_xmp, STRIP_CRS_NAMES)
-        # 1a) QUITA el perfil embebido del preset (Look/CameraProfile) → gana el SELECCIONADO.
-        xmp = _remove_profile(xmp)
-        # 1b) CONVIERTE preset-template → ajustes aplicados (quita PresetType/UUID/ShowInPresets…).
-        #     Se hace DESPUÉS de quitar el Look, para no corromper su UUID/Name.
-        xmp = _strip_crs_attrs(xmp, PRESET_WRAPPER_NAMES)
+        # 1-1b) Limpieza del preset (idéntica para todas las fotos): cacheada.
+        xmp = _prepare_preset(preset_xmp)
         # 2) INYECTA los 13 valores calculados por la IA (temp/tint solo si hay corrección).
         for key, attr in AI_BASIC_ATTR_MAP.items():
             v = ai.get(key)
@@ -1086,27 +1092,30 @@ async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends
     creative = data.get("creative_params") or {}
     preset_xmp = data.get("preset_xmp")
     now = datetime.now(timezone.utc).isoformat()
+    BATCH = 100  # lotes pequeños: memoria acotada y el servidor sigue respondiendo
+
+    def _build_ops(chunk):
+        ops = []
+        for p in chunk:
+            fn = (p.get("filename") or "").strip()
+            if not fn:
+                continue
+            xmp = build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative,
+                                  preset_xmp, req.camera_profile, req.precision_mode)
+            ops.append(pymongo.UpdateOne(
+                {"user_id": user.user_id, "filename": fn},
+                {"$set": {"user_id": user.user_id, "filename": fn, "filename_lc": fn.lower(), "xmp_content": xmp,
+                          "status": "pending", "updated_at": now},
+                 "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
+                upsert=True))
+        return ops
+
     written = 0
-    ops = []
-    BATCH = 500  # descarga los XMP a Mongo por lotes: no acumula miles en memoria
-    for p in photos:
-        fn = (p.get("filename") or "").strip()
-        if not fn:
-            continue
-        xmp = build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative,
-                              preset_xmp, req.camera_profile, req.precision_mode)
-        ops.append(pymongo.UpdateOne(
-            {"user_id": user.user_id, "filename": fn},
-            {"$set": {"user_id": user.user_id, "filename": fn, "filename_lc": fn.lower(), "xmp_content": xmp,
-                      "status": "pending", "updated_at": now},
-             "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
-            upsert=True))
-        written += 1
-        if len(ops) >= BATCH:
+    for i in range(0, len(photos), BATCH):
+        ops = await asyncio.to_thread(_build_ops, photos[i:i + BATCH])
+        if ops:
             await db.lr_jobs.bulk_write(ops, ordered=False)
-            ops = []
-    if ops:
-        await db.lr_jobs.bulk_write(ops, ordered=False)
+            written += len(ops)
     return {"written": written}
 
 
@@ -1118,7 +1127,7 @@ async def generate_xmp(project_id: str, req: XmpRequest, user: User = Depends(re
     data = req.model_dump()
     # Genera y comprime a DISCO (streaming), una entrada a la vez: memoria acotada
     # aunque el catálogo tenga miles de fotos con preset por foto.
-    path, count = zip_entries_to_tempfile(xmp_entries(data, req.camera_profile, req.precision_mode))
+    path, count = await asyncio.to_thread(lambda: zip_entries_to_tempfile(xmp_entries(data, req.camera_profile, req.precision_mode)))
     if count == 0:
         try:
             os.remove(path)
@@ -1220,7 +1229,7 @@ async def download_cloud_job(job_id: str, user: User = Depends(get_current_user)
         raise HTTPException(status_code=409, detail="El trabajo aún no ha terminado")
     project = await db.projects.find_one({"id": job["project_id"]}, {"_id": 0})
     pname = project.get("name") if project else "proyecto"
-    path, count = zip_entries_to_tempfile(xmp_entries(job, job.get("camera_profile"), job.get("precision_mode")))
+    path, count = await asyncio.to_thread(lambda: zip_entries_to_tempfile(xmp_entries(job, job.get("camera_profile"), job.get("precision_mode"))))
     if count == 0:
         try:
             os.remove(path)

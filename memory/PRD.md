@@ -255,3 +255,7 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
 - Nuevo POST /api/lr/pending {filenames[]} (máx 500) → solo los XMP de las fotos seleccionadas; match insensible a mayúsculas (campo filename_lc).
 - Índices lr_jobs creados al arrancar.
 - Plugin v1.1: lotes de 150, reintentos, muestra código HTTP en errores. El usuario debe reinstalar el plugin.
+
+## 2026-06 — Fix error 520 en "Enviar a Lightroom" (web, POST /projects/{id}/lr-push)
+- Causa (confirmada con logs de prod): generar XMP con preset costaba ~0,16 s/foto de CPU síncrona en el único worker → probes de liveness fallan → Kubernetes reinicia el pod → 520.
+- Fix: limpieza del preset cacheada (`_prepare_preset`, lru_cache), generación en `asyncio.to_thread` por lotes de 100; ZIPs también en hilo. 600 fotos: ~95 s → 0,9 s.

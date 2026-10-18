@@ -304,8 +304,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
         </>
       )}
 
-      <button data-testid="review-continue-btn" disabled={!selected.length}
-        disabled={!!aiBusy} onClick={() => onContinue(photos)}
+      <button data-testid="review-continue-btn" disabled={!selected.length || !!aiBusy} onClick={() => onContinue(photos)}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-zinc-950 transition-transform hover:scale-[1.02] disabled:opacity-40">
         Continuar con {selected.length} seleccionadas <ArrowRight className="h-4 w-4" />
       </button>
