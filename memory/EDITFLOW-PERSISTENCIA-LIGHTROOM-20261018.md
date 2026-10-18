@@ -1,0 +1,9 @@
+# Corrección de persistencia y Lightroom — 18 octubre 2026
+
+Estudio: recupera galería completa desde workspacePhotos o finalSelection legado sin seleccionar carpeta. Preserva decisiones, comparación de ráfagas, métricas, preset completo, perfil, informe y payload XMP exacto. Cambiar selección invalida informe/payload anteriores. Guardado de estado atómico por campo, con validación de claves.
+
+Previews JPEG 800px y análisis parcial en IndexedDB por proyecto/carpeta/identidad. Sin copiar RAW completos. Nueva importación guarda manifiesto; análisis guarda por archivo y automáticamente al terminar antes de Continuar. Reconectar originales conserva decisiones y guarda previews para próximas aperturas. Datos antiguos que nunca guardaron métricas/preset/previews no pueden reconstruirse de forma exacta: mostrar galería y permitir reconectar, sin fingir recuperar ediciones perdidas. Previews locales no viajan entre dispositivos ni sobreviven borrado de datos del navegador.
+
+Lightroom: ambas copias de plugin versión 1.2, dirección EditFlow correcta, prueba autenticada de conexión al configurar. Aplicación directa de parámetros Camera Raw al catálogo mediante applyDevelopSettings (incluido DNG), lotes 100, errores por foto, confirmación al servidor solo después de aplicación. No escribe sidecars ni modifica RAW. Requiere actualizar plugin existente; no se ha validado todavía contra el catálogo real del usuario.
+
+Validación: 25 tests backend/contrato y runtime Lua (Lupa temporal, catálogo simulado); 7 tests frontend, incluidos montaje del Studio con 774 fotos sin originales y recuperación de payload exacto. Producción build exit 0, warnings preexistentes webpack/hooks. Backups en /app/rollback-editflow-20261018 (excluidos de Git). No cambios de proveedor, modelos o pagos.

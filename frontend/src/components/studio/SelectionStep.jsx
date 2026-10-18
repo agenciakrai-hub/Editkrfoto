@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { ArrowRight, Layers, CheckCircle2, Images, ScanFace, Users, User, AlertTriangle } from "lucide-react";
-import { SAMPLE_THUMBS } from "@/lib/rawSelection";
+import { cachePhoto, readPhoto } from "@/lib/workspaceCache";
+import { thumbBase64 } from "@/lib/rawThumb";
 import { analyzeFile, groupAndSelect, mapLimit } from "@/lib/imageAnalysis";
 import { applyFaceLayer } from "@/lib/faceEngine";
 import SelectionProgress from "@/components/studio/SelectionProgress";
 
 const DEFAULT_BASIC = { exposure: 0.1, contrast: 0, highlights: -15, shadows: 15, whites: 5, blacks: -5 };
 
-export default function SelectionStep({ files, onContinue }) {
+export default function SelectionStep({ files, cacheKey, onCheckpoint, onContinue }) {
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState("analyzing"); // analyzing | faces
   const [faceProgress, setFaceProgress] = useState(0);
@@ -20,7 +21,15 @@ export default function SelectionStep({ files, onContinue }) {
       try {
         const arr = Array.from(files);
         // Analiza el contenido real (nitidez + exposición + hash visual) de cada RAW.
-        const metrics = await mapLimit(arr, 3, (f) => analyzeFile(f), (done) => {
+        const previews=new Map();
+        const metrics=await mapLimit(arr,3,async f=>{
+          if(!active) throw new Error('Análisis pausado');
+          const identity={name:f.name,size:f.size,lastModified:f.lastModified,relativePath:f.webkitRelativePath || f.name};
+          const cached=await readPhoto(cacheKey,identity);
+          if(cached?.metrics && cached?.preview){previews.set(f,cached.preview);return cached.metrics;}
+          const metric=await analyzeFile(f);const preview=await thumbBase64(f,800);
+          await cachePhoto(cacheKey,identity,preview,metric);previews.set(f,preview);return metric;
+        },(done)=>{
           if (active) setProgress(Math.round((done / arr.length) * 100));
         });
         if (!active) return;
@@ -32,7 +41,8 @@ export default function SelectionStep({ files, onContinue }) {
           size: it.size,
           burstId: it.burstId,
           score: it.score,
-          thumb: SAMPLE_THUMBS[i % SAMPLE_THUMBS.length],
+          thumb:previews.get(it.file) ? 'data:image/jpeg;base64,'+previews.get(it.file) : null,
+          relativePath:it.file.webkitRelativePath || it.name,lastModified:it.file.lastModified,
           file: it.file,
           basic: it.metrics?.basic || DEFAULT_BASIC,
           photometrics: it.metrics?.photometrics || null,
@@ -50,9 +60,11 @@ export default function SelectionStep({ files, onContinue }) {
 
         const bursts = new Set(photos.map((p) => p.burstId)).size;
         const selected = photos.filter((p) => p.selectedForEdit).length;
+        await onCheckpoint?.(photos,people);
+        if(!active) return;
         setResult({ photos, total: photos.length, bursts, selected, faceStats, people });
       } catch (e) {
-        if (active) setError("No se pudo analizar la selección. Inténtalo de nuevo.");
+        if (active) setError("No se pudo completar o guardar el análisis: "+e.message+". El progreso ya guardado se conserva.");
       }
     })();
     return () => { active = false; };

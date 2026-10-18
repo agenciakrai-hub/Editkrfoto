@@ -79,7 +79,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
       const candidates = [];
       for (const p of batch) {
         alive();
-        const img = await thumbBase64(p.file, 800);
+        const img = await thumbBase64(p.file || p.previewFile, 800);
         if (!img) throw new Error("Falta una vista previa: vuelve a elegir la carpeta original");
         await new Promise((resolve, reject) => {
           const image = new Image();

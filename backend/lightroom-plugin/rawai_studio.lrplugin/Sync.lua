@@ -3,123 +3,60 @@ local LrDialogs = import "LrDialogs"
 local LrHttp = import "LrHttp"
 local LrPrefs = import "LrPrefs"
 local LrTasks = import "LrTasks"
-local LrPathUtils = import "LrPathUtils"
-local LrFunctionContext = import "LrFunctionContext"
 local LrProgressScope = import "LrProgressScope"
-
-local prefs = LrPrefs.prefsForPlugin()
 local JSON = require "json"
-local BATCH = 150
-
--- Devuelve (cuerpo, codigoHTTP)
-local function apiCall(method, path, body)
-    local base = (prefs.baseUrl or "https://edit.krimagina.com"):gsub("/+$", "")
-    local url = base .. "/api" .. path
-    local headers = {
-        { field = "Content-Type", value = "application/json" },
-        { field = "X-LR-Token", value = prefs.token or "" },
-    }
-    local resp, hdrs
-    if method == "POST" then
-        resp, hdrs = LrHttp.post(url, body or "{}", headers, "POST", 120)
-    else
-        resp, hdrs = LrHttp.get(url, headers, 120)
-    end
-    local status = hdrs and hdrs.status or nil
-    return resp, status
+local prefs = LrPrefs.prefsForPlugin()
+local function apiCall(path, body)
+    local base = prefs.baseUrl or "https://editflow.krfoto.com"
+    if base == "https://edit.krfoto.com" or base == "https://edit.krimagina.com" then base = "https://editflow.krfoto.com" end
+    base = base:gsub("/+$", ""):gsub("/api$", "")
+    local raw, headers = LrHttp.post(base .. "/api" .. path, JSON.encode(body), {{field="Content-Type",value="application/json"},{field="X-LR-Token",value=prefs.token or ""}},"POST",120)
+    local status = headers and tonumber(headers.status)
+    if status and status ~= 200 then error("HTTP " .. tostring(status) .. ". Revisa el servidor y el token de EditFlow.") end
+    local ok, data = pcall(function() return JSON.decode(raw or "") end)
+    if not ok or not data then error("Respuesta inválida de EditFlow. Comprueba la URL en Configurar.") end
+    return data
 end
-
--- Pide al servidor los XMP de un lote de nombres; reintenta 2 veces ante fallos transitorios.
-local function fetchBatch(names)
-    local payload = JSON.encode({ filenames = names })
-    local lastStatus
-    for attempt = 1, 3 do
-        local raw, status = apiCall("POST", "/lr/pending", payload)
-        lastStatus = status
-        if raw and (status == nil or status == 200) then
-            local ok, data = pcall(function() return JSON.decode(raw) end)
-            if ok and data and data.jobs then return data.jobs, nil end
-        end
-        if status == 401 then return nil, "Token inválido (401). Copia de nuevo el token desde la web." end
-        LrTasks.sleep(2 * attempt)
-    end
-    return nil, "Error del servidor" .. (lastStatus and (" " .. tostring(lastStatus)) or " (sin respuesta)") .. ". Inténtalo de nuevo en un minuto."
-end
-
 LrTasks.startAsyncTask(function()
-    LrFunctionContext.callWithContext("rawai_sync", function(context)
-        if not prefs.token or prefs.token == "" then
-            LrDialogs.message("RAW AI Studio", "Configura primero el token (menú: Configurar).", "warning")
-            return
-        end
-        local catalog = LrApplication.activeCatalog()
-        local photos = catalog:getTargetPhotos()
-        if #photos == 0 then
-            LrDialogs.message("RAW AI Studio", "Selecciona al menos una foto.", "warning")
-            return
-        end
-
-        local progress = LrProgressScope { title = "RAW AI Studio: sincronizando…" }
-        local applied, missing, errMsg = 0, 0, nil
-        local total = #photos
-
-        for start = 1, total, BATCH do
+    if not prefs.token or prefs.token == "" then LrDialogs.message("EditFlow","Configura primero el token de EditFlow.","warning");return end
+    local catalog = LrApplication.activeCatalog()
+    local photos = catalog:getTargetPhotos()
+    if #photos == 0 then LrDialogs.message("EditFlow","Selecciona las fotos del trabajo en Lightroom.","warning");return end
+    local progress = LrProgressScope {title="EditFlow: sincronizando con Lightroom"}
+    local applied, missing, failed = 0,0,0
+    local ok, err = LrTasks.pcall(function()
+        for start=1,#photos,100 do
             if progress:isCanceled() then break end
-            local chunk, names = {}, {}
-            for i = start, math.min(start + BATCH - 1, total) do
-                local photo = photos[i]
-                local name = photo:getFormattedMetadata("fileName") or ""
-                chunk[#chunk + 1] = { photo = photo, lc = name:lower() }
-                names[#names + 1] = name
+            local names, chunk = {},{}
+            for i=start,math.min(start+99,#photos) do
+                local name=photos[i]:getFormattedMetadata("fileName") or ""
+                names[#names+1]=name;chunk[#chunk+1]={photo=photos[i],name=name:lower()}
             end
-
-            local jobs, err = fetchBatch(names)
-            if not jobs then errMsg = err; break end
-
-            local byName = {}
-            for _, job in ipairs(jobs) do
-                byName[(job.filename or ""):lower()] = job
-            end
-
-            local doneIds = {}
-            for k, item in ipairs(chunk) do
-                local job = byName[item.lc]
-                if job and job.xmp_content then
-                    local rawPath = item.photo:getRawMetadata("path")
-                    if rawPath then
-                        local dir = LrPathUtils.parent(rawPath)
-                        local baseNoExt = LrPathUtils.removeExtension(LrPathUtils.leafName(rawPath))
-                        local xmpPath = LrPathUtils.child(dir, baseNoExt .. ".xmp")
-                        local fh = io.open(xmpPath, "w")
-                        if fh then
-                            fh:write(job.xmp_content)
-                            fh:close()
-                            catalog:withWriteAccessDo("readMeta", function()
-                                item.photo:readMetadata()
-                            end, { timeout = 30 })
-                            applied = applied + 1
-                            doneIds[#doneIds + 1] = job.id
-                        end
-                    end
+            local data=apiCall("/lr/pending",{filenames=names})
+            if not data.jobs then error("El servidor no devolvió una cola válida.") end
+            local jobs, ids = {},{}
+            for _,job in ipairs(data.jobs) do jobs[(job.filename or ""):lower()]=job end
+            for i,item in ipairs(chunk) do
+                if progress:isCanceled() then break end
+                local job=jobs[item.name]
+                if not job then missing=missing+1
+                elseif not job.develop_settings or next(job.develop_settings)==nil then failed=failed+1
                 else
-                    missing = missing + 1
+                    local success= LrTasks.pcall(function()
+                        local result=catalog:withWriteAccessDo("EditFlow: edición IA",function()
+                            item.photo:applyDevelopSettings(job.develop_settings,"EditFlow: edición IA")
+                        end,{timeout=30})
+                        if result ~= "executed" then error("El catálogo está ocupado") end
+                    end)
+                    if success then applied=applied+1;ids[#ids+1]=job.id else failed=failed+1 end
                 end
-                progress:setPortionComplete(start + k - 1, total)
+                progress:setPortionComplete(start+i-1,#photos)
             end
-
-            if #doneIds > 0 then
-                apiCall("POST", "/lr/complete", JSON.encode({ ids = doneIds }))
-            end
+            if #ids>0 then apiCall("/lr/complete",{ids=ids}) end
         end
-        progress:done()
-
-        local msg = string.format("Aplicadas: %d\nSin coincidencia: %d", applied, missing)
-        if errMsg then
-            LrDialogs.message("RAW AI Studio", msg .. "\n\n" .. errMsg, "error")
-            return
-        end
-        LrDialogs.message("RAW AI Studio",
-            msg .. "\n\nNota: en archivos DNG, Lightroom lee el XMP incrustado; los sidecar .xmp funcionan en RAW nativos (CR3/NEF/ARW).",
-            "info")
     end)
+    progress:done()
+    local msg=string.format("Aplicadas al catálogo: %d\nSin edición pendiente: %d\nFallidas (conservadas para reintentar): %d",applied,missing,failed)
+    if not ok then msg=msg .. "\n\n" .. tostring(err) end
+    LrDialogs.message("EditFlow",msg,(ok and failed==0) and "info" or "warning")
 end)

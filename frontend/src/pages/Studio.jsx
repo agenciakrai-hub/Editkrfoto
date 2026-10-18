@@ -13,7 +13,9 @@ import ReportStep from "@/components/studio/ReportStep";
 import { computeAiBasics } from "@/lib/rawaistudio/basicEngine";
 import { analyzeFile, mapLimit } from "@/lib/imageAnalysis";
 import { analyzeFolder } from "@/lib/rawSelection";
+import { thumbBase64 } from "@/lib/rawThumb";
 import api from "@/lib/api";
+import { packPhoto, restorePhotos, savedStep, readPhoto, cachePhoto, photoIdentity } from "@/lib/workspaceCache";
 
 const STEP_INDEX = { folder: 0, selection: 1, review: 2, style: 3, mode: 4, processing: 4, report: 4 };
 
@@ -34,6 +36,23 @@ export default function Studio() {
   const [profileChoice, setProfileChoice] = useState({ profile: "Adobe Color" });
   const [presetInfo, setPresetInfo] = useState(null);
   const [result, setResult] = useState(null);
+  const [relink, setRelink] = useState(false);
+  const [reviewVersion,setReviewVersion]=useState(0);
+  const cacheKey = projectId+':'+(folderId || 'project');
+  const restore = async entity => {
+    const st=entity.rawai_state || {};
+    const restored=restorePhotos(st);
+    if(!restored.length) return;
+    await Promise.all(restored.map(async p=>{
+      try {const c=await readPhoto(cacheKey,p);
+        if(c?.preview){p.thumb='data:image/jpeg;base64,'+c.preview;p.previewFile=new File([Uint8Array.from(atob(c.preview),x=>x.charCodeAt(0))],'preview.jpg',{type:'image/jpeg'});}
+        if(c?.metrics && !p.photometrics){p.photometrics=c.metrics.photometrics;p.color=c.metrics.color;}
+      }catch{/* Saved cloud decisions remain accessible without this device cache. */}
+    }));
+    setPhotos(restored);setSendPhotos(restored.filter(p=>p.selectedForEdit));
+    setProfileChoice(st.profileChoice || {profile:'Adobe Color'});
+    setPresetInfo(st.presetInfo || null);setResult(st.report || null);setStep(savedStep(st));
+  };
 
   useEffect(() => {
     if (!projectId) { navigate("/dashboard"); return; }
@@ -43,11 +62,13 @@ export default function Studio() {
           const [f, p] = await Promise.all([api.get(`/folders/${folderId}`), api.get(`/projects/${projectId}`)]);
           setProjectName(p.data.name);
           if (f.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}&folder=${folderId}`); return; }
+          await restore(f.data);
           setProject(f.data);
         } else {
           const r = await api.get(`/projects/${projectId}`);
           setProjectName(r.data.name);
           if (r.data.rawai_state?.cloudJobId) { navigate(`/processing?project=${projectId}`); return; }
+          await restore(r.data);
           setProject(r.data);
         }
       } catch { navigate("/dashboard"); }
@@ -60,10 +81,12 @@ export default function Studio() {
   const persist = (patch) => {
     const pending = saveQueue.current.catch(() => {}).then(() => api.patch(`${stateUrl}/state`, patch));
     saveQueue.current = pending;
+    pending.then(()=>setProject(p=>p ? {...p,rawai_state:{...p.rawai_state,...patch}} : p),()=>{});
     return pending;
   };
   // finalSelection = fuente de verdad. Guarda estado + origen (ai/manual) + rating/label por foto.
   const persistFinal = (all) => persist({
+    workspacePhotos:all.map(packPhoto), report:null, xmpPayload:null, workspaceStep:"review",
     finalSelection: all.map((p) => ({
       filename: p.name,
       relativePath: p.file?.webkitRelativePath || p.relativePath || p.name,
@@ -84,6 +107,7 @@ export default function Studio() {
   // Necesario al REANUDAR una selección guardada (analyzeFolder no analiza píxeles).
   const ensureMetrics = async (queue) => {
     const missing = queue.filter((p) => !p.photometrics && p.file);
+    if(queue.some(p=>!p.photometrics && !p.file)) throw new Error("Reconecta los originales para completar el análisis. La selección guardada se conserva.");
     if (!missing.length) return;
     let done = 0;
     const t = toast.loading(`Analizando ${missing.length} fotos para los ajustes IA…`, { description: "0%" });
@@ -167,6 +191,31 @@ export default function Studio() {
 
       <div className="mt-6"><Stepper current={STEP_INDEX[step]} /></div>
 
+      {photos.length>0 && step!=='folder' && <div className="mt-5 rounded-xl border border-zinc-700 p-4" data-testid="saved-workspace">
+        <p>{photos.length} fotos guardadas · {photos.filter(p=>p.selectedForEdit).length} seleccionadas. La selección y la edición se recuperan al abrir el trabajo.</p>
+        <p className="mt-1 text-sm text-zinc-400">Las vistas previas se conservan en este dispositivo. Reconecta los originales para leer archivos que falten o exportar DNG.</p>
+        <button className="mt-3 underline" onClick={()=>setRelink(v=>!v)}>Reconectar originales</button>
+        {relink && <FolderSelectStep onContinue={async f=>{
+          const byId=new Map(f.map(file=>[photoIdentity({name:file.name,size:file.size,lastModified:file.lastModified,relativePath:file.webkitRelativePath || file.name}),file]));
+          const linked=photos.map(p=>({...p,file:byId.get(photoIdentity(p)) || (!p.size && f.filter(x=>x.name===p.name).length===1 ? f.find(x=>x.name===p.name) : p.file)}));
+          const t=toast.loading('Guardando vistas previas del trabajo…');
+          try {
+            let done=0;
+            await mapLimit(linked.filter(p=>p.file),3,async p=>{
+              const old=await readPhoto(cacheKey,p);
+              const preview=old?.preview || await thumbBase64(p.file,800);
+              await cachePhoto(cacheKey,p,preview,old?.metrics || (p.photometrics ? {photometrics:p.photometrics,color:p.color} : null));
+              if(preview) p.thumb='data:image/jpeg;base64,'+preview;
+              done++;toast.loading('Guardando vistas previas: '+done+' / '+linked.length,{id:t});
+            });
+            await persist({workspacePhotos:linked.map(packPhoto)});
+          }catch(err){toast.error('No se pudieron guardar todas las vistas previas: '+err.message);return;}
+          finally {toast.dismiss(t);}
+          setFiles(f);setPhotos(linked);setSendPhotos(linked.filter(p=>p.selectedForEdit));setReviewVersion(v=>v+1);setRelink(false);
+          if(project.rawai_state?.workspaceStep==='selection' && !project.rawai_state?.selectionCompleted) setStep('selection');
+          toast.success(linked.filter(p=>p.file).length+' originales reconectados; decisiones conservadas');
+        }}/>}
+      </div>}
       <div className={`mt-8 ${step === "review" || step === "style" ? "" : "max-w-3xl"}`}>
         {step === "folder" && (
           <FolderSelectStep onContinue={async (f, folderName) => {
@@ -203,13 +252,18 @@ export default function Studio() {
               toast.success("Selección final restaurada", { description: `${all.filter((p) => p.selectedForEdit).length} fotos en la selección` });
               setStep("review");
             } else {
+              await persist({workspacePhotos:analyzeFolder(f).map(packPhoto),workspaceStep:'selection',totalPhotos:f.length});
               setStep("selection");
             }
           }} />
         )}
 
         {step === "selection" && (
-          <SelectionStep files={files} onContinue={async (p, ppl) => {
+          <SelectionStep files={files} cacheKey={cacheKey} onCheckpoint={async(p,ppl)=>{
+            setPhotos(p);setPeople(ppl || []);
+            await persistFinal(p);
+            await persist({selectionCompleted:true,workspaceStep:'review',totalPhotos:p.length});
+          }} onContinue={async (p, ppl) => {
             p.forEach((x) => { x.source = "ai"; }); // propuesta inicial de la IA
             setPhotos(p);
             setPeople(ppl || []);
@@ -220,7 +274,7 @@ export default function Studio() {
         )}
 
         {step === "review" && (
-          <ReviewStep initialPhotos={photos} people={people}
+          <ReviewStep key={reviewVersion} initialPhotos={photos} people={people}
             onChange={async (all) => { await persistFinal(all); setPhotos(all); }}
             onContinue={async (all) => {
               setPhotos(all);
@@ -239,7 +293,7 @@ export default function Studio() {
               setProfileChoice(choice);
               setPresetInfo(info);
               await persist({
-                profileChoice: choice, profileCompleted: true,
+                profileChoice: choice, profileCompleted: true, presetInfo:info, workspaceStep:"mode",
                 presetName: info.presetName, precisionMode: info.precisionMode, presetCompleted: true,
               });
               setStep("mode");
@@ -261,6 +315,7 @@ export default function Studio() {
         {step === "processing" && (
           <ProcessingStep count={sendPhotos.length} onDone={async (r) => {
             setResult(r);
+            await persist({report:r,presetInfo,profileChoice,workspaceStep:'report',xmpPayload:buildPayload()});
             await api.put(`${stateUrl}`, { status: "completed", processed_images: r.succeeded });
             toast.success("Procesamiento completado", { description: `${r.succeeded} fotos listas` });
             setStep("report");
@@ -268,7 +323,7 @@ export default function Studio() {
         )}
 
         {step === "report" && result && (
-          <ReportStep report={result} projectId={projectId} payload={xmpPayload} files={sendPhotos}
+          <ReportStep report={result} projectId={projectId} payload={project.rawai_state?.xmpPayload || xmpPayload} files={sendPhotos}
             audit={auditByFile} onRestart={() => navigate(folderId ? `/project/${projectId}` : "/dashboard")} />
         )}
       </div>

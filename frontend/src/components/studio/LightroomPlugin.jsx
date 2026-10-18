@@ -32,7 +32,7 @@ export default function LightroomPlugin({ projectId, payload, getPhotos, title, 
         n = r.data?.written || 0;
       }
       if (!n) { toast.error("No hay XMP para enviar"); return; }
-      toast.success(`${n} fotos enviadas a Lightroom`, {
+      toast.success(`${n} fotos en cola para Lightroom`, {
         description: "En Lightroom: selecciona las fotos y usa el plugin RAW AI Studio › Sincronizar.",
       });
     } catch (err) {
@@ -45,6 +45,7 @@ export default function LightroomPlugin({ projectId, payload, getPhotos, title, 
     } finally { setBusy(false); }
   };
 
+  const serverUrl = process.env.REACT_APP_BACKEND_URL || window.location.origin;
   const pluginUrl = `${process.env.REACT_APP_BACKEND_URL}/api/lr/plugin-download`;
 
   return (
@@ -76,7 +77,7 @@ export default function LightroomPlugin({ projectId, payload, getPhotos, title, 
         <p className="mt-3 text-xs text-zinc-500">
           Descomprime el ZIP y ejecuta <span className="font-mono text-zinc-300">Instalar-Windows.bat</span> o <span className="font-mono text-zinc-300">Instalar-Mac.command</span>. El plugin se copia solo a Lightroom; al reiniciarlo estará cargado.
         </p>
-        <p className="mt-3 text-xs text-zinc-500">Pega este token en el plugin (RAW AI Studio › Configurar):</p>
+        <p className="mt-3 text-xs text-zinc-500">Servidor: {serverUrl}. En el plugin actualizado abre Configurar y pega el token de esta cuenta:</p>
         <div className="mt-1 flex items-center gap-2">
           <code data-testid="lr-token" className="flex-1 truncate rounded bg-[#1c1c22] px-2 py-1.5 font-mono text-xs text-sky-200">{token || "…"}</code>
           <button data-testid="lr-token-copy" onClick={copyToken} className="rounded-md border border-zinc-700 p-1.5 text-zinc-300 hover:bg-zinc-800">

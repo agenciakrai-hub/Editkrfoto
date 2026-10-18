@@ -423,6 +423,42 @@ async def _user_from_lr_token(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Token de plugin inválido")
     return u["user_id"]
 
+def _lr_job_payload(job):
+    """Translate generated Camera Raw settings for direct catalog application, including DNG."""
+    import xml.etree.ElementTree as ET
+    settings = {}
+    ns = '{http://ns.adobe.com/camera-raw-settings/1.0/}'
+    try:
+        tree = ET.fromstring(job.get('xmp_content') or '')
+        for element in tree.iter():
+            for key, value in element.attrib.items():
+                if not key.startswith(ns):
+                    continue
+                key = key[len(ns):]
+                if key in {'Version', 'HasSettings', 'RawFileName', 'AlreadyApplied'}:
+                    continue
+                if value.lower() in ('true', 'false'):
+                    settings[key] = value.lower() == 'true'
+                else:
+                    try:
+                        settings[key] = float(value) if key not in ('ProcessVersion', 'CameraProfile') else value
+                    except ValueError:
+                        settings[key] = value
+            if element.tag.startswith(ns):
+                key = element.tag[len(ns):]
+                values = [li.text for li in element.iter('{http://www.w3.org/1999/02/22-rdf-syntax-ns#}li') if li.text]
+                if values and key.startswith('ToneCurve'):
+                    settings[key] = [float(v.strip()) for pair in values for v in pair.split(',')]
+        job['develop_settings'] = settings
+    except (ET.ParseError, ValueError):
+        job['develop_settings'] = {}
+    return job
+
+@api_router.get('/lr/health')
+async def lr_health(request: Request):
+    await _user_from_lr_token(request)
+    return {'ok': True, 'protocol': 2}
+
 @api_router.get("/lr/token")
 async def lr_get_token(user: User = Depends(get_current_user)):
     doc = await db.users.find_one({"user_id": user.user_id}, {"_id": 0, "lr_token": 1})
@@ -474,7 +510,7 @@ async def lr_pending(request: Request):
         yield b'{"jobs":['
         n = 0
         async for d in cursor:
-            yield (b"," if n else b"") + json.dumps(d, ensure_ascii=False).encode("utf-8")
+            yield (b"," if n else b"") + json.dumps(_lr_job_payload(d), ensure_ascii=False).encode("utf-8")
             n += 1
         yield f'],"count":{n}}}'.encode()
     return StreamingResponse(_gen(), media_type="application/json")
@@ -492,7 +528,7 @@ async def lr_pending_batch(body: LrPendingQuery, request: Request):
          "$or": [{"filename_lc": {"$in": lc}}, {"filename": {"$in": names}}]},
         {"_id": 0, "id": 1, "filename": 1, "xmp_content": 1},
     ).to_list(len(names) * 2)
-    return {"jobs": docs, "count": len(docs)}
+    return {"jobs": [_lr_job_payload(d) for d in docs], "count": len(docs)}
 
 PLUGIN_DIR = ROOT_DIR / "lightroom-plugin" / "rawai_studio.lrplugin"
 
@@ -566,13 +602,15 @@ async def update_project(project_id: str, payload: ProjectUpdate, user: User = D
 
 @api_router.patch("/projects/{project_id}/state", response_model=Project)
 async def merge_state(project_id: str, patch: Dict[str, Any], user: User = Depends(get_current_user)):
+    if any('.' in k or k.startswith('$') for k in patch):
+        raise HTTPException(status_code=400, detail='Nombre de campo de estado inválido')
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
     state = doc.get("rawai_state", {}) or {}
     state.update(patch)
     await db.projects.update_one({"id": project_id}, {"$set": {
-        "rawai_state": state,
+        **{f"rawai_state.{k}": v for k, v in patch.items()},
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }})
     updated = await db.projects.find_one({"id": project_id}, {"_id": 0})
@@ -649,11 +687,13 @@ async def update_folder(folder_id: str, payload: FolderUpdate, user: User = Depe
 
 @api_router.patch("/folders/{folder_id}/state", response_model=ProjectFolder)
 async def merge_folder_state(folder_id: str, patch: Dict[str, Any], user: User = Depends(get_current_user)):
+    if any('.' in k or k.startswith('$') for k in patch):
+        raise HTTPException(status_code=400, detail='Nombre de campo de estado inválido')
     doc = await _get_folder_or_404(folder_id, user)
     state = doc.get("rawai_state", {}) or {}
     state.update(patch)
     await db.project_folders.update_one({"id": folder_id}, {"$set": {
-        "rawai_state": state, "updated_at": datetime.now(timezone.utc).isoformat(),
+        **{f"rawai_state.{k}": v for k, v in patch.items()}, "updated_at": datetime.now(timezone.utc).isoformat(),
     }})
     return ProjectFolder(**await _get_folder_or_404(folder_id, user))
 
