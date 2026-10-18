@@ -567,10 +567,40 @@ async def lr_complete(body: LrCompleteBody, request: Request):
 
 
 # ----------------------------- Project routes -----------------------------
+def _apply_folder_totals(doc, summary):
+    # Folder counters are authoritative for populated folder-based projects.
+    # Legacy projects with no populated folders keep their own totals.
+    result = dict(doc)
+    if not summary or not summary.get('total_images'):
+        return result
+    total = max(0, int(summary['total_images']))
+    processed = min(total, max(0, int(summary.get('processed_images') or 0)))
+    active = int(summary.get('active_folders') or 0)
+    completed = int(summary.get('completed_folders') or 0)
+    result.update(total_images=total, processed_images=processed,
+                  status='completed' if active and completed == active else 'processing')
+    return result
+
+async def _projects_with_folder_totals(docs, user_id):
+    if not docs:
+        return []
+    summaries = await db.project_folders.aggregate([
+        {'$match': {'user_id': user_id, 'project_id': {'$in': [d['id'] for d in docs]}}},
+        {'$group': {
+            '_id': '$project_id',
+            'total_images': {'$sum': {'$ifNull': ['$total_images', 0]}},
+            'processed_images': {'$sum': {'$ifNull': ['$processed_images', 0]}},
+            'active_folders': {'$sum': {'$cond': [{'$gt': ['$total_images', 0]}, 1, 0]}},
+            'completed_folders': {'$sum': {'$cond': [{'$and': [{'$gt': ['$total_images', 0]}, {'$eq': ['$status', 'completed']}]}, 1, 0]}},
+        }},
+    ]).to_list(len(docs))
+    by_project = {item['_id']: item for item in summaries}
+    return [Project(**_apply_folder_totals(d, by_project.get(d['id']))) for d in docs]
+
 @api_router.get("/projects", response_model=List[Project])
 async def list_projects(user: User = Depends(get_current_user)):
     docs = await db.projects.find({"user_id": user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    return [Project(**d) for d in docs]
+    return await _projects_with_folder_totals(docs, user.user_id)
 
 
 @api_router.post("/projects", response_model=Project)
@@ -585,7 +615,7 @@ async def get_project(project_id: str, user: User = Depends(get_current_user)):
     doc = await db.projects.find_one({"id": project_id, "user_id": user.user_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
-    return Project(**doc)
+    return (await _projects_with_folder_totals([doc], user.user_id))[0]
 
 
 @api_router.put("/projects/{project_id}", response_model=Project)
@@ -597,7 +627,7 @@ async def update_project(project_id: str, payload: ProjectUpdate, user: User = D
     patch["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.projects.update_one({"id": project_id}, {"$set": patch})
     updated = await db.projects.find_one({"id": project_id}, {"_id": 0})
-    return Project(**updated)
+    return (await _projects_with_folder_totals([updated], user.user_id))[0]
 
 
 @api_router.patch("/projects/{project_id}/state", response_model=Project)
