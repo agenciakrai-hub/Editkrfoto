@@ -39,7 +39,7 @@ export default function PhotoViewer({ list, index, onClose, onNav, onToggle }) {
       <div className="relative flex flex-1 items-center justify-center overflow-hidden px-4">
         <button data-testid="viewer-prev" onClick={() => onNav(-1)} className="absolute left-4 rounded-full bg-zinc-900/70 p-3 text-zinc-200 hover:bg-zinc-800"><ChevronLeft className="h-6 w-6" /></button>
         <div className="max-h-[70vh] max-w-[80vw]">
-          <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="max-h-[70vh] w-auto rounded-lg" />
+          <Thumbnail file={p.file || p.previewFile} fallback={p.thumb} alt={p.name} className="max-h-[70vh] w-auto rounded-lg" />
         </div>
         <button data-testid="viewer-next" onClick={() => onNav(1)} className="absolute right-4 rounded-full bg-zinc-900/70 p-3 text-zinc-200 hover:bg-zinc-800"><ChevronRight className="h-6 w-6" /></button>
       </div>

@@ -142,7 +142,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
       className={`group overflow-hidden rounded-xl border transition-all ${p.selectedForEdit ? "border-emerald-400/60 bg-emerald-400/[0.04]" : "border-zinc-800 bg-[#141418]"}`}>
       <button data-testid={`open-viewer-${p.name}`} onClick={() => openViewer(p)} className="block w-full">
         <div className="relative aspect-[3/2] w-full bg-zinc-900">
-          <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
+          <Thumbnail file={p.file || p.previewFile} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
           <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] text-zinc-300 backdrop-blur">
             {p.source === "manual" ? <><Hand className="h-3 w-3" /> Manual</> : <><Sparkles className="h-3 w-3 text-emerald-400" /> {p.selectionComparison ? "IA comparativa" : "Análisis local"}</>}
           </span>
@@ -257,7 +257,7 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
                   <button key={p.id} data-testid={`burst-pick-${p.name}`} disabled={!!aiBusy} onClick={() => chooseExclusive(p)}
                     className={`group overflow-hidden rounded-lg border text-left transition-all ${p.selectedForEdit ? "border-emerald-400 ring-1 ring-emerald-400/50" : "border-zinc-800 hover:border-zinc-600"}`}>
                     <div className="relative aspect-[3/2] w-full">
-                      <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
+                      <Thumbnail file={p.file || p.previewFile} fallback={p.thumb} alt={p.name} className="aspect-[3/2] w-full" dimmed={!p.selectedForEdit} />
                       {p.selectedForEdit ? (
                         <span className="absolute right-1.5 top-1.5 inline-flex items-center gap-1 rounded-md bg-emerald-400/90 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-950" data-testid={`burst-chosen-${p.name}`}>
                           <Check className="h-3 w-3" /> Elegida

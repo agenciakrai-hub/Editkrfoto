@@ -8,7 +8,7 @@ export default function PhotoCard({ p, onToggle }) {
       className={`group relative overflow-hidden rounded-lg border text-left transition-all duration-200
         ${p.selectedForEdit ? "border-emerald-400/70 ring-2 ring-emerald-400/40" : "border-zinc-800 hover:border-zinc-600"}`}>
       <div className="relative aspect-[4/3] w-full bg-zinc-900">
-        <Thumbnail file={p.file} fallback={p.thumb} alt={p.name} className="aspect-[4/3] w-full" dimmed={!p.selectedForEdit} />
+        <Thumbnail file={p.file || p.previewFile} fallback={p.thumb} alt={p.name} className="aspect-[4/3] w-full" dimmed={!p.selectedForEdit} />
         {p.selectedForEdit && (
           <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-400 text-zinc-950 shadow">
             <Check className="h-3.5 w-3.5" strokeWidth={3} />

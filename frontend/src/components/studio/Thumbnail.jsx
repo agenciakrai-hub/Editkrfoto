@@ -23,22 +23,31 @@ export default function Thumbnail({ file, fallback, alt, className, dimmed }) {
     if (!visible) return;
     let active = true;
     let created = null;
+    setUrl(null);
+    setFailed(false);
     (async () => {
-      const t = await extractThumb(file);
-      if (!active) { if (t) URL.revokeObjectURL(t); return; }
-      if (t) { created = t; setUrl(t); } else { setFailed(true); }
+      try {
+        const t = await extractThumb(file);
+        if (!active) { if (t) URL.revokeObjectURL(t); return; }
+        if (t) { created = t; setUrl(t); } else if (!fallback) { setFailed(true); }
+      } catch {
+        if (active && !fallback) setFailed(true);
+      }
     })();
     return () => { active = false; if (created) URL.revokeObjectURL(created); };
-  }, [visible, file]);
+  }, [visible, file, fallback]);
 
-  const src = url || (failed ? fallback : null);
+  const src = failed ? null : url || fallback || null;
 
   return (
     <div ref={ref} className={`relative bg-zinc-900 ${className || ""}`}>
       {src ? (
-        <img src={src} alt={alt} className={`h-full w-full object-cover transition-all duration-300 ${dimmed ? "opacity-45 grayscale" : ""}`} />
-      ) : failed ? (
-        <div className="flex h-full w-full items-center justify-center text-zinc-700"><ImageOff className="h-6 w-6" /></div>
+        <img src={src} alt={alt} onError={() => setFailed(true)} className={`h-full w-full object-cover transition-all duration-300 ${dimmed ? "opacity-45 grayscale" : ""}`} />
+      ) : failed || !file ? (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-3 text-center text-zinc-400" data-testid="thumbnail-unavailable">
+          <ImageOff className="h-6 w-6" />
+          <span className="text-xs">Vista previa no disponible</span>
+        </div>
       ) : (
         <div className="h-full w-full animate-pulse bg-zinc-800/60" />
       )}

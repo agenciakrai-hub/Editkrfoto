@@ -15,7 +15,8 @@ import { analyzeFile, mapLimit } from "@/lib/imageAnalysis";
 import { analyzeFolder } from "@/lib/rawSelection";
 import { thumbBase64 } from "@/lib/rawThumb";
 import api from "@/lib/api";
-import { packPhoto, restorePhotos, savedStep, readPhoto, cachePhoto, photoIdentity } from "@/lib/workspaceCache";
+import { packPhoto, restorePhotos, savedStep, readPhoto, cachePhoto, photoIdentity, saveDirectoryHandle, readDirectoryHandle, readDirectoryPermission, filesFromDirectory } from "@/lib/workspaceCache";
+import { isRaw } from "@/lib/rawSelection";
 
 const STEP_INDEX = { folder: 0, selection: 1, review: 2, style: 3, mode: 4, processing: 4, report: 4 };
 
@@ -37,13 +38,27 @@ export default function Studio() {
   const [presetInfo, setPresetInfo] = useState(null);
   const [result, setResult] = useState(null);
   const [relink, setRelink] = useState(false);
+  const [directoryConnected, setDirectoryConnected] = useState(false);
   const [reviewVersion,setReviewVersion]=useState(0);
   const cacheKey = projectId+':'+(folderId || 'project');
   const restore = async entity => {
     const st=entity.rawai_state || {};
     const restored=restorePhotos(st);
     if(!restored.length) return;
+    let linkedFiles=[];
+    try {
+      const saved=await readDirectoryHandle(cacheKey);
+      if(saved?.handle && await readDirectoryPermission(saved.handle)==='granted') {
+        linkedFiles=(await filesFromDirectory(saved.handle)).filter(file=>isRaw(file.name));
+        setFiles(linkedFiles);setDirectoryConnected(true);
+      }
+    } catch { /* Cached previews and saved decisions remain available without originals. */ }
+    const byIdentity=new Map(linkedFiles.map(file=>[photoIdentity({name:file.name,size:file.size,lastModified:file.lastModified,relativePath:file.webkitRelativePath || file.name}),file]));
+    const byPath=new Map(linkedFiles.map(file=>[file.webkitRelativePath || file.name,file]));
+    const byName=new Map();
+    linkedFiles.forEach(file=>byName.set(file.name,[...(byName.get(file.name) || []),file]));
     await Promise.all(restored.map(async p=>{
+      p.file=byIdentity.get(photoIdentity(p)) || ((!p.size && !p.lastModified) ? byPath.get(p.relativePath) || (byName.get(p.name)?.length===1 ? byName.get(p.name)[0] : undefined) : undefined);
       try {const c=await readPhoto(cacheKey,p);
         if(c?.preview){p.thumb='data:image/jpeg;base64,'+c.preview;p.previewFile=new File([Uint8Array.from(atob(c.preview),x=>x.charCodeAt(0))],'preview.jpg',{type:'image/jpeg'});}
         if(c?.metrics && !p.photometrics){p.photometrics=c.metrics.photometrics;p.color=c.metrics.color;}
@@ -52,6 +67,46 @@ export default function Studio() {
     setPhotos(restored);setSendPhotos(restored.filter(p=>p.selectedForEdit));
     setProfileChoice(st.profileChoice || {profile:'Adobe Color'});
     setPresetInfo(st.presetInfo || null);setResult(st.report || null);setStep(savedStep(st));
+  };
+
+  const linkOriginals = async (selectedFiles,handle) => {
+    const byId=new Map(selectedFiles.map(file=>[photoIdentity({name:file.name,size:file.size,lastModified:file.lastModified,relativePath:file.webkitRelativePath || file.name}),file]));
+    const linked=photos.map(p=>({...p,file:byId.get(photoIdentity(p)) || (!p.size && selectedFiles.filter(x=>x.name===p.name).length===1 ? selectedFiles.find(x=>x.name===p.name) : p.file)}));
+    const t=toast.loading('Guardando vistas previas del trabajo…');
+    let persistent=false;
+    try {
+      persistent=handle ? await saveDirectoryHandle(cacheKey,handle) : false;
+      await mapLimit(linked.filter(p=>p.file),3,async p=>{
+        const old=await readPhoto(cacheKey,p);
+        const preview=old?.preview || await thumbBase64(p.file,800);
+        await cachePhoto(cacheKey,p,preview,old?.metrics || (p.photometrics ? {photometrics:p.photometrics,color:p.color} : null));
+        if(preview) p.thumb='data:image/jpeg;base64,'+preview;
+      });
+      await persist({workspacePhotos:linked.map(packPhoto)});
+    }catch(err){toast.error('No se pudieron guardar todas las vistas previas: '+err.message);return;}
+    finally {toast.dismiss(t);}
+    setFiles(selectedFiles);setPhotos(linked);setSendPhotos(linked.filter(p=>p.selectedForEdit));setReviewVersion(v=>v+1);setRelink(false);setDirectoryConnected(persistent);
+    if(project.rawai_state?.workspaceStep==='selection' && !project.rawai_state?.selectionCompleted) setStep('selection');
+    toast.success(linked.filter(p=>p.file).length+' originales reconectados; decisiones conservadas');
+  };
+
+  const reconnectOriginals = async () => {
+    try {
+      const saved=await readDirectoryHandle(cacheKey);
+      let handle=saved?.handle;
+      if(handle && await readDirectoryPermission(handle,true)==='granted') {
+        const f=(await filesFromDirectory(handle)).filter(file=>isRaw(file.name));
+        await linkOriginals(f,handle);return;
+      }
+      if(typeof window.showDirectoryPicker==='function') {
+        handle=await window.showDirectoryPicker({mode:'read'});
+        const f=(await filesFromDirectory(handle)).filter(file=>isRaw(file.name));
+        await linkOriginals(f,handle);return;
+      }
+    } catch(error) {
+      if(error?.name==='AbortError') return;
+    }
+    setRelink(true);
   };
 
   useEffect(() => {
@@ -195,33 +250,21 @@ export default function Studio() {
 
       {photos.length>0 && step!=='folder' && <div className="mt-5 rounded-xl border border-zinc-700 p-4" data-testid="saved-workspace">
         <p>{photos.length} fotos guardadas · {photos.filter(p=>p.selectedForEdit).length} seleccionadas. La selección y la edición se recuperan al abrir el trabajo.</p>
-        <p className="mt-1 text-sm text-zinc-400">Las vistas previas se conservan en este dispositivo. Reconecta los originales para leer archivos que falten o exportar DNG.</p>
-        <button className="mt-3 underline" onClick={()=>setRelink(v=>!v)}>Reconectar originales</button>
-        {relink && <FolderSelectStep onContinue={async f=>{
-          const byId=new Map(f.map(file=>[photoIdentity({name:file.name,size:file.size,lastModified:file.lastModified,relativePath:file.webkitRelativePath || file.name}),file]));
-          const linked=photos.map(p=>({...p,file:byId.get(photoIdentity(p)) || (!p.size && f.filter(x=>x.name===p.name).length===1 ? f.find(x=>x.name===p.name) : p.file)}));
-          const t=toast.loading('Guardando vistas previas del trabajo…');
-          try {
-            let done=0;
-            await mapLimit(linked.filter(p=>p.file),3,async p=>{
-              const old=await readPhoto(cacheKey,p);
-              const preview=old?.preview || await thumbBase64(p.file,800);
-              await cachePhoto(cacheKey,p,preview,old?.metrics || (p.photometrics ? {photometrics:p.photometrics,color:p.color} : null));
-              if(preview) p.thumb='data:image/jpeg;base64,'+preview;
-              done++;toast.loading('Guardando vistas previas: '+done+' / '+linked.length,{id:t});
-            });
-            await persist({workspacePhotos:linked.map(packPhoto)});
-          }catch(err){toast.error('No se pudieron guardar todas las vistas previas: '+err.message);return;}
-          finally {toast.dismiss(t);}
-          setFiles(f);setPhotos(linked);setSendPhotos(linked.filter(p=>p.selectedForEdit));setReviewVersion(v=>v+1);setRelink(false);
-          if(project.rawai_state?.workspaceStep==='selection' && !project.rawai_state?.selectionCompleted) setStep('selection');
-          toast.success(linked.filter(p=>p.file).length+' originales reconectados; decisiones conservadas');
+        <p className="mt-1 text-sm text-zinc-400">Las vistas previas se conservan en este dispositivo. {directoryConnected ? 'Carpeta original conectada.' : 'Reconecta para leer los originales o exportar DNG.'}</p>
+        <button className="mt-3 underline" onClick={reconnectOriginals}>{directoryConnected ? 'Actualizar conexión de originales' : 'Reconectar originales'}</button>
+        {relink && <FolderSelectStep onContinue={async(f,_folderName,handle)=>{
+          const raws=f.filter(file=>isRaw(file.name));
+          await linkOriginals(raws,handle);
         }}/>}
       </div>}
       <div className={`mt-8 ${step === "review" || step === "style" ? "" : "max-w-3xl"}`}>
         {step === "folder" && (
-          <FolderSelectStep onContinue={async (f, folderName) => {
+          <FolderSelectStep onContinue={async (f, folderName, handle) => {
             setFiles(f);
+            if(handle) {
+              const stored=await saveDirectoryHandle(cacheKey,handle);
+              setDirectoryConnected(stored);
+            }
             await api.put(`${stateUrl}`, { raw_folder_path: folderName, total_images: f.length, status: "processing" });
             setProject((p) => ({ ...p, raw_folder_path: folderName, total_images: f.length }));
             // Reanudar selección: si el proyecto ya tenía una selección guardada por nombre de archivo,
