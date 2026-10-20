@@ -172,10 +172,12 @@ class TestPresetPassthrough:
             xmp = z.read(name).decode("utf-8")
             # Basic replaced per photo (NOT the preset's +1.50)
             assert _get_attr(xmp, "Exposure2012") == expected_exp, name
-            # Creative preset attrs preserved
-            assert _get_attr(xmp, "Clarity2012") == "30", name
-            assert _get_attr(xmp, "Vibrance") == "25", name
-            assert _get_attr(xmp, "Texture") == "18", name
+            # Los 13 básicos son de la IA: el preset no los aporta (sin dato IA → 0, una sola vez)
+            assert _get_attr(xmp, "Clarity2012") == "0", name
+            assert _get_attr(xmp, "Vibrance") == "0", name
+            assert _get_attr(xmp, "Texture") == "0", name
+            assert xmp.count("crs:Clarity2012=") == 1, name
+            # Look creativo del preset preservado
             assert _get_attr(xmp, "SplitToningShadowHue") == "220", name
 
 
@@ -241,9 +243,9 @@ class TestCloudJobPreset:
         c2 = z.read("C2.xmp").decode("utf-8")
         assert _get_attr(c1, "Exposure2012") == "+0.85"
         assert _get_attr(c2, "Exposure2012") == "-0.60"
-        # Preserved creative
+        # Básicos IA aislados del preset; look creativo preservado
         for xmp in (c1, c2):
-            assert _get_attr(xmp, "Clarity2012") == "30"
-            assert _get_attr(xmp, "Vibrance") == "25"
-            assert _get_attr(xmp, "Texture") == "18"
+            assert _get_attr(xmp, "Clarity2012") == "0"
+            assert _get_attr(xmp, "Vibrance") == "0"
+            assert _get_attr(xmp, "Texture") == "0"
             assert _get_attr(xmp, "SplitToningShadowHue") == "220"

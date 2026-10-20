@@ -173,6 +173,9 @@ export default function ReviewStep({ initialPhotos, people = [], onChange, onCon
               ))}
             </div>
           )}
+          {p.selectedForEdit && p.reviewNotes?.length > 0 && (
+            <p className="mt-1 text-[10px] leading-snug text-amber-200/80" data-testid={`review-note-${p.name}`}>{p.reviewNotes.join(" ")}</p>
+          )}
         </div>
         {p.selectedForEdit ? (
           <button data-testid={`remove-${p.name}`} disabled={!!aiBusy} onClick={() => applyToggle(p.id)} title="Quitar de la selección"

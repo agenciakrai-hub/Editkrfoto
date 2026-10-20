@@ -28,12 +28,12 @@ def test_session(mongo_db):
     user_id = f"test-user-{ts}"
     token = f"test_session_{ts}"
     email = f"qa.raw+{ts}@example.com"
+    from datetime import datetime, timezone, timedelta
     mongo_db.users.insert_one({
         "user_id": user_id, "email": email, "name": "QA Fotografo",
         "picture": "https://via.placeholder.com/150",
-        "created_at": "2026-01-01T00:00:00+00:00",
+        "created_at": datetime.now(timezone.utc).isoformat(),  # prueba vigente (antes fecha fija → 402)
     })
-    from datetime import datetime, timezone, timedelta
     mongo_db.user_sessions.insert_one({
         "user_id": user_id, "session_token": token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),

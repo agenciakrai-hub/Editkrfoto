@@ -24,6 +24,8 @@ export const WARNING = {
   NO_PERFECT_CANDIDATE: "WARNING_NO_PERFECT_CANDIDATE",
   SUBJECT_TRACKING_UNCERTAIN: "WARNING_SUBJECT_TRACKING_UNCERTAIN",
   TIE: "WARNING_TIE",
+  GROUPING_UNCERTAIN: "WARNING_GROUPING_UNCERTAIN",
+  FACES_UNAVAILABLE: "WARNING_FACES_UNAVAILABLE",
 };
 
 export const WARNING_LABELS = {
@@ -37,6 +39,8 @@ export const WARNING_LABELS = {
   WARNING_NO_PERFECT_CANDIDATE: "Ninguna toma perfecta",
   WARNING_SUBJECT_TRACKING_UNCERTAIN: "Sujetos inciertos",
   WARNING_TIE: "Empate (elige tú)",
+  WARNING_GROUPING_UNCERTAIN: "Agrupación dudosa",
+  WARNING_FACES_UNAVAILABLE: "Caras sin analizar",
 };
 
 // --- Umbrales -------------------------------------------------------------

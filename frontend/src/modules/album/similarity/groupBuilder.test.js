@@ -211,3 +211,10 @@ export async function runGroupBuilderTests() {
 
   return { ok: checks.every((c) => c.ok), checks, failed: checks.filter((c) => !c.ok).map((c) => c.name) };
 }
+// Jest: ejecuta los mismos casos (en el navegador sigue disponible runGroupBuilderTests).
+if (typeof test === "function") {
+  test("groupBuilder: todos los casos de agrupación pasan", async () => {
+    const r = await runGroupBuilderTests();
+    expect(r.failed).toEqual([]);
+  });
+}

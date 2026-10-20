@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ShieldCheck, ShieldAlert, ChevronDown, Check, Minus, X, AlertTriangle, RefreshCw, Eye, Cpu } from "lucide-react";
 import BeforeAfterMini from "@/components/studio/BeforeAfterMini";
+import { confidenceNotes } from "@/lib/xmp/confidenceNotes";
 
 const Badge = ({ ok, warn, children, testid }) => {
   const cls = ok
@@ -52,6 +53,19 @@ function VerificationRow({ item }) {
         </Badge>
         <Badge ok={v.ratingOk} testid={`verify-rating-${item.name}`}>5★ + Verde</Badge>
       </div>
+
+      {failed && v.errors?.length > 0 && (
+        <ul data-testid={`verify-errors-${item.name}`} className="mt-2 list-disc space-y-0.5 pl-5 text-[11px] text-rose-300">
+          {v.errors.map((e) => <li key={e}>{e}</li>)}
+        </ul>
+      )}
+
+      {confidenceNotes(item.audit).map((n) => (
+        <p key={n.text} data-testid={`confidence-note-${item.name}`}
+          className={`mt-2 flex items-start gap-1.5 text-[11px] leading-snug ${n.level === "warn" ? "text-amber-300" : "text-zinc-400"}`}>
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {n.text}
+        </p>
+      ))}
 
       {preview && <BeforeAfterMini file={item.file} basics={v.basics} />}
 
@@ -122,7 +136,7 @@ export default function VerificationPanel({ report, onRetry, retrying }) {
         <div>
           <h3 className="font-display text-lg font-semibold">Verificación de exportación</h3>
           <p data-testid="verification-summary" className="text-sm text-zinc-500">
-            {okCount}/{report.length} archivos con básicas de la IA aplicadas y sin envoltura de preset (leído del propio archivo, sin Lightroom).
+            {okCount}/{report.length} archivos con los 13 básicos válidos, HasSettings, 5★ + Verde y sin envoltura de preset (leído del propio archivo, sin Lightroom).
           </p>
         </div>
       </div>
@@ -132,7 +146,7 @@ export default function VerificationPanel({ report, onRetry, retrying }) {
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-400" />
             <div className="text-sm">
-              <p className="font-medium text-rose-200">{failing.length} archivo(s) salieron sin básicas de la IA o como preset-template.</p>
+              <p className="font-medium text-rose-200">{failing.length} archivo(s) no superan la verificación (detalle por foto abajo).</p>
               <p className="mt-0.5 text-[13px] text-rose-300/80">
                 Lightroom no aplicaría los ajustes en: <span className="font-mono">{failing.slice(0, 4).map((f) => f.name).join(", ")}{failing.length > 4 ? "…" : ""}</span>. Reintenta la exportación.
               </p>

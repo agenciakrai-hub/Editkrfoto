@@ -1,4 +1,5 @@
 from ai_contracts import parse_burst_choice, selected_model
+from lr_sync import lr_job_ops, lr_job_payload, match_lr_jobs
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, Body
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
@@ -160,6 +161,7 @@ class FolderUpdate(BaseModel):
 
 class PhotoBasic(BaseModel):
     filename: str
+    relative_path: Optional[str] = None                       # clave estable para Lightroom (carpeta/archivo)
     basic: Dict[str, float] = Field(default_factory=dict)     # compat (6 básicos v2)
     ai_basics: Dict[str, Any] = Field(default_factory=dict)   # Motor IA: los 13 básicos (temp/tint pueden ser null)
 
@@ -407,7 +409,7 @@ async def logout(request: Request, response: Response):
 
 # ==== Conexión propia con plugin de Lightroom (independiente de terceros) ====
 # El plugin (LrHttp) se conecta a este backend HTTPS con un token de emparejamiento por cuenta.
-# Empareja las fotos por NOMBRE DE ARCHIVO; el plugin resuelve la ruta desde el catálogo.
+# Empareja por RUTA relativa (clave estable) y solo usa el nombre si es único (lr_sync.match_lr_jobs).
 
 class LrPushBody(BaseModel):
     photos: List[Dict[str, Any]] = Field(default_factory=list)  # [{filename, xmp_content}]
@@ -424,41 +426,24 @@ async def _user_from_lr_token(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Token de plugin inválido")
     return u["user_id"]
 
-def _lr_job_payload(job):
-    """Translate generated Camera Raw settings for direct catalog application, including DNG."""
-    import xml.etree.ElementTree as ET
-    settings = {}
-    ns = '{http://ns.adobe.com/camera-raw-settings/1.0/}'
-    try:
-        tree = ET.fromstring(job.get('xmp_content') or '')
-        for element in tree.iter():
-            for key, value in element.attrib.items():
-                if not key.startswith(ns):
-                    continue
-                key = key[len(ns):]
-                if key in {'Version', 'HasSettings', 'RawFileName', 'AlreadyApplied'}:
-                    continue
-                if value.lower() in ('true', 'false'):
-                    settings[key] = value.lower() == 'true'
-                else:
-                    try:
-                        settings[key] = float(value) if key not in ('ProcessVersion', 'CameraProfile') else value
-                    except ValueError:
-                        settings[key] = value
-            if element.tag.startswith(ns):
-                key = element.tag[len(ns):]
-                values = [li.text for li in element.iter('{http://www.w3.org/1999/02/22-rdf-syntax-ns#}li') if li.text]
-                if values and key.startswith('ToneCurve'):
-                    settings[key] = [float(v.strip()) for pair in values for v in pair.split(',')]
-        job['develop_settings'] = settings
-    except (ET.ParseError, ValueError):
-        job['develop_settings'] = {}
-    return job
+_lr_job_payload = lr_job_payload
+
+
+class LrMatchPhoto(BaseModel):
+    key: str
+    name: str
+    path: Optional[str] = None
+
+class LrMatchBody(BaseModel):
+    photos: List[LrMatchPhoto] = Field(default_factory=list, max_length=5000)
+
+class LrJobsBody(BaseModel):
+    ids: List[str] = Field(default_factory=list, max_length=200)
 
 @api_router.get('/lr/health')
 async def lr_health(request: Request):
     await _user_from_lr_token(request)
-    return {'ok': True, 'protocol': 2}
+    return {'ok': True, 'protocol': 3}
 
 @api_router.get("/lr/token")
 async def lr_get_token(user: User = Depends(get_current_user)):
@@ -478,22 +463,33 @@ async def lr_rotate_token(user: User = Depends(get_current_user)):
 @api_router.post("/lr/push")
 async def lr_push(body: LrPushBody, user: User = Depends(require_access)):
     now = datetime.now(timezone.utc).isoformat()
-    written = 0
-    for p in body.photos:
-        fn = (p.get("filename") or "").strip()
-        xmp = p.get("xmp_content") or ""
-        if not fn or not xmp:
-            continue
-        # una entrada pendiente por (usuario, nombre de archivo): la última sustituye a la anterior.
-        await db.lr_jobs.update_one(
-            {"user_id": user.user_id, "filename": fn},
-            {"$set": {"user_id": user.user_id, "filename": fn, "filename_lc": fn.lower(), "xmp_content": xmp,
-                      "status": "pending", "updated_at": now},
-             "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
-            upsert=True,
-        )
-        written += 1
-    return {"written": written}
+    entries = [(p.get("filename"), p.get("relative_path"), p.get("xmp_content")) for p in body.photos]
+    ops = lr_job_ops(user.user_id, entries, now)
+    if ops:
+        await db.lr_jobs.bulk_write(ops, ordered=False)
+    return {"written": sum(1 for o in ops if isinstance(o, pymongo.UpdateOne))}
+
+@api_router.post("/lr/match")
+async def lr_match(body: LrMatchBody, request: Request):
+    # Plugin v1.2+: empareja TODA la selección (ruta → nombre único) y reporta ambigüedades
+    # antes de aplicar nada. Sin contenido XMP: respuesta ligera.
+    user_id = await _user_from_lr_token(request)
+    names = list({p.name.lower() for p in body.photos if p.name})
+    jobs = await db.lr_jobs.find(
+        {"user_id": user_id, "status": "pending", "filename_lc": {"$in": names}},
+        {"_id": 0, "id": 1, "filename": 1, "filename_lc": 1, "path_key": 1},
+    ).to_list(len(names) * 4 + 10)
+    results = match_lr_jobs([p.model_dump() for p in body.photos], jobs)
+    return {"protocol": 3, "results": results}
+
+@api_router.post("/lr/jobs")
+async def lr_jobs_by_id(body: LrJobsBody, request: Request):
+    user_id = await _user_from_lr_token(request)
+    docs = await db.lr_jobs.find(
+        {"user_id": user_id, "status": "pending", "id": {"$in": body.ids}},
+        {"_id": 0, "id": 1, "filename": 1, "path_key": 1, "xmp_content": 1},
+    ).to_list(len(body.ids))
+    return {"jobs": [lr_job_payload(d) for d in docs]}
 
 class LrPendingQuery(BaseModel):
     filenames: List[str] = Field(default_factory=list, max_length=500)
@@ -980,6 +976,17 @@ def _set_xmp_meta(xmp):
     return xmp
 
 
+def _ai_basic_value(ai, key):
+    # Los 13 básicos siempre se escriben (0 = sin corrección) para que el preset no aporte
+    # ninguno; temp/tint solo existen si la IA corrige el WB (si no, "As Shot").
+    v = ai.get(key)
+    if key == "temperature":
+        return v
+    if key == "tint":
+        return v if v is not None else (0 if ai.get("temperature") is not None else None)
+    return 0 if v is None else v
+
+
 @functools.lru_cache(maxsize=4)
 def _prepare_preset(preset_xmp):
     # 1) ELIMINA del preset cualquier ajuste de los 13 básicos (+ WhiteBalance).
@@ -998,16 +1005,18 @@ def build_photo_xmp(filename, ai, creative_params, preset_xmp, camera_profile, p
         xmp = _prepare_preset(preset_xmp)
         # 2) INYECTA los 13 valores calculados por la IA (temp/tint solo si hay corrección).
         for key, attr in AI_BASIC_ATTR_MAP.items():
-            v = ai.get(key)
+            v = _ai_basic_value(ai, key)
             if v is None:
                 continue
             xmp = _set_crs_attr(xmp, attr, _fmt_basic(key, v))
         xmp = _set_wb(xmp, "Custom" if ai.get("temperature") is not None else "As Shot")
+        xmp = _set_crs_str_attr(xmp, "HasSettings", "True")
         # 3) INYECTA el perfil de cámara SELECCIONADO (base de color antes del look del preset).
         xmp = _apply_profile(xmp, camera_profile)
         return _set_xmp_meta(xmp)  # 5★ + etiqueta verde para la selección final
     # Sin preset: XMP nuevo con SOLO los 13 básicos de la IA.
-    return build_xmp(filename, dict(ai), camera_profile or "Adobe Standard", precision or "balanced")
+    full = {k: _ai_basic_value(ai, k) for k in AI_BASIC_ATTR_MAP}
+    return build_xmp(filename, full, camera_profile or "Adobe Standard", precision or "balanced")
 
 
 def xmp_entries(req_or_job, camera_profile, precision):
@@ -1095,27 +1104,18 @@ async def project_lr_push(project_id: str, req: XmpRequest, user: User = Depends
     BATCH = 100  # lotes pequeños: memoria acotada y el servidor sigue respondiendo
 
     def _build_ops(chunk):
-        ops = []
-        for p in chunk:
-            fn = (p.get("filename") or "").strip()
-            if not fn:
-                continue
-            xmp = build_photo_xmp(fn, p.get("ai_basics") or p.get("basic") or {}, creative,
-                                  preset_xmp, req.camera_profile, req.precision_mode)
-            ops.append(pymongo.UpdateOne(
-                {"user_id": user.user_id, "filename": fn},
-                {"$set": {"user_id": user.user_id, "filename": fn, "filename_lc": fn.lower(), "xmp_content": xmp,
-                          "status": "pending", "updated_at": now},
-                 "$setOnInsert": {"id": f"lrj_{uuid.uuid4().hex[:12]}", "created_at": now}},
-                upsert=True))
-        return ops
+        entries = [((p.get("filename") or "").strip(), p.get("relative_path"),
+                    build_photo_xmp(p["filename"], p.get("ai_basics") or p.get("basic") or {}, creative,
+                                    preset_xmp, req.camera_profile, req.precision_mode))
+                   for p in chunk if (p.get("filename") or "").strip()]
+        return lr_job_ops(user.user_id, entries, now)
 
     written = 0
     for i in range(0, len(photos), BATCH):
         ops = await asyncio.to_thread(_build_ops, photos[i:i + BATCH])
         if ops:
             await db.lr_jobs.bulk_write(ops, ordered=False)
-            written += len(ops)
+            written += sum(1 for o in ops if isinstance(o, pymongo.UpdateOne))
     return {"written": written}
 
 
@@ -2436,6 +2436,7 @@ async def reap_stuck_jobs():
     now = datetime.now(timezone.utc).isoformat()
     await db.lr_jobs.create_index([("user_id", 1), ("status", 1), ("filename_lc", 1)])
     await db.lr_jobs.create_index([("user_id", 1), ("filename", 1)])
+    await db.lr_jobs.create_index([("user_id", 1), ("path_key", 1)])
     await db.cloud_jobs.update_many(
         {"status": {"$in": ["queued", "processing"]}},
         {"$set": {"status": "failed", "error_message": "Interrumpido por reinicio del servidor. Vuelve a enviarlo.", "updated_at": now}},

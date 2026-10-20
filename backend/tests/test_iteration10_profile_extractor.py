@@ -111,9 +111,12 @@ class TestAnalyzeHtml:
 
     def test_analyze_non_html_non_profile(self):
         # A plain text file that is neither HTML nor a profile.
-        r = requests.post(f"{API}/profile-extractor/analyze",
-                          json={"url": "https://raw.githubusercontent.com/adobe/xmp-docs/master/README.md"},
-                          headers=_hdr(TOKEN_A), timeout=30)
+        try:
+            r = requests.post(f"{API}/profile-extractor/analyze",
+                              json={"url": "https://raw.githubusercontent.com/adobe/xmp-docs/master/README.md"},
+                              headers=_hdr(TOKEN_A), timeout=30)
+        except requests.exceptions.Timeout:
+            pytest.skip("upstream unreachable: timeout")
         # If reachable, backend returns 200 with either an html-parsed-empty or an error message.
         if r.status_code != 200:
             pytest.skip(f"upstream unreachable: {r.status_code}")

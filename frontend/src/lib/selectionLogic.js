@@ -42,20 +42,54 @@ export function autoToneFromHistogram(hist, total) {
   return { exposure: Math.round(exposure * 100) / 100, contrast: 0, highlights, shadows, whites, blacks };
 }
 
-// items: [{ name, size, file, metrics:{sharpness,exposure,hash}|null }]
-// Agrupa por similitud visual (pHash) y marca la mejor toma de cada secuencia (o varias si hay empate).
+import { WARNING } from "@/lib/burstDecision";
+
+export const MAX_GAP_MS = 2500;  // > 2,5 s entre disparos consecutivos → otra toma
+export const PHASH_STRICT = 5;   // sin hora de captura: solo une si el parecido es muy alto
+
+const natural = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true });
+function folderOf(p) { const s = String(p || "").replace(/\\/g, "/"); const i = s.lastIndexOf("/"); return i < 0 ? "" : s.slice(0, i); }
+const timeOf = (it) => (Number.isFinite(it.meta?.captureTime) ? it.meta.captureTime : null);
+
+// Orden de captura: carpeta → cámara → (con hora primero) hora → nombre.
+function captureOrder(a, b) {
+  return natural(folderOf(a.relativePath), folderOf(b.relativePath))
+    || natural(a.meta?.camera || "", b.meta?.camera || "")
+    || (timeOf(a) == null) - (timeOf(b) == null)
+    || (timeOf(a) != null && timeOf(b) != null ? timeOf(a) - timeOf(b) : 0)
+    || natural(a.name, b.name);
+}
+
+// ¿Es `cur` la toma siguiente de la misma ráfaga que `prev`? → { same, timed }
+export function linkShots(prev, cur) {
+  if (!prev) return { same: false };
+  if (folderOf(prev.relativePath) !== folderOf(cur.relativePath)) return { same: false };
+  if ((prev.meta?.camera || "") !== (cur.meta?.camera || "")) return { same: false };
+  const hp = prev.metrics?.hash, hc = cur.metrics?.hash;
+  if (hp == null || hc == null) return { same: false }; // sin hash → reinicia la cadena
+  const tp = timeOf(prev), tc = timeOf(cur);
+  const timed = tp != null && tc != null;
+  if (timed && Math.abs(tc - tp) > MAX_GAP_MS) return { same: false };
+  return { same: hamming(hp, hc) <= (timed ? PHASH_THRESHOLD : PHASH_STRICT), timed };
+}
+
+// items: [{ name, relativePath?, meta?:{captureTime,camera}, metrics:{sharpness,exposure,hash}|null }]
+// Agrupa por orden de captura/cámara/carpeta (hash visual como señal auxiliar, solo entre tomas
+// CONTIGUAS) y marca la mejor de cada secuencia. Sin hora de captura → grupos conservadores
+// marcados `groupUncertain` para revisión.
 export function groupAndSelect(items) {
-  const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const sorted = [...items].sort(captureOrder);
 
   let burstId = 0;
-  let prevHash = null;
-  for (const it of sorted) {
-    const h = it.metrics ? it.metrics.hash : null;
-    const same = h != null && prevHash != null && hamming(prevHash, h) <= PHASH_THRESHOLD;
-    if (!same) burstId += 1;
+  let prev = null;
+  sorted.forEach((it, i) => {
+    const link = linkShots(prev, it);
+    if (!link.same) burstId += 1;
+    else if (!link.timed) { it.groupUncertain = true; prev.groupUncertain = true; }
     it.burstId = burstId;
-    if (h != null) prevHash = h;
-  }
+    it.seq = i;
+    prev = it;
+  });
 
   const groups = new Map();
   for (const it of sorted) {
@@ -83,4 +117,31 @@ export function groupAndSelect(items) {
   }
 
   return sorted;
+}
+
+export const REVIEW_NOTES = {
+  [WARNING.GROUPING_UNCERTAIN]: "Agrupada solo por parecido visual (sin hora de captura en el archivo). Comprueba que es la misma toma y añade o quita fotos manualmente.",
+  [WARNING.FACES_UNAVAILABLE]: "Las caras no se analizaron en esta foto. Revisa ojos y expresión manualmente antes de editar.",
+};
+
+// Añade advertencias accionables a las seleccionadas (agrupación dudosa / caras sin analizar).
+// faceLayer: { available:boolean, reason?:string }. Muta y devuelve `photos`.
+export function applyReviewFlags(photos, faceLayer = { available: true }) {
+  const size = {};
+  photos.forEach((p) => { size[p.burstId] = (size[p.burstId] || 0) + 1; });
+  for (const p of photos) {
+    const types = [];
+    if (p.groupUncertain) types.push(WARNING.GROUPING_UNCERTAIN);
+    const needsFaces = size[p.burstId] > 1 || p.selectedForEdit;
+    if (needsFaces && (!faceLayer.available || p.faceError)) types.push(WARNING.FACES_UNAVAILABLE);
+    if (!types.length) continue;
+    p.warningTypes = Array.from(new Set([...(p.warningTypes || []), ...types]));
+    const notes = types.map((t) => REVIEW_NOTES[t]);
+    if (types.includes(WARNING.FACES_UNAVAILABLE) && !faceLayer.available && faceLayer.reason) {
+      notes[types.indexOf(WARNING.FACES_UNAVAILABLE)] = `Análisis facial no disponible (${faceLayer.reason}). Revisa ojos y expresión manualmente; recarga la página para reintentar.`;
+    }
+    p.reviewNotes = Array.from(new Set([...(p.reviewNotes || []), ...notes]));
+    if (p.selectedForEdit) { p.warning = true; p.doubt = true; }
+  }
+  return photos;
 }

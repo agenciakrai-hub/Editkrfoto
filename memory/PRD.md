@@ -259,3 +259,11 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
 ## 2026-06 — Fix error 520 en "Enviar a Lightroom" (web, POST /projects/{id}/lr-push)
 - Causa (confirmada con logs de prod): generar XMP con preset costaba ~0,16 s/foto de CPU síncrona en el único worker → probes de liveness fallan → Kubernetes reinicia el pod → 520.
 - Fix: limpieza del preset cacheada (`_prepare_preset`, lru_cache), generación en `asyncio.to_thread` por lotes de 100; ZIPs también en hilo. 600 fotos: ~95 s → 0,9 s.
+
+## 2026-10 — Revisión selección + Lightroom (plugin 1.2, protocolo 3)
+- Selector: EXIF (hora+subsegundos, marca/modelo/serie) en `lib/captureMeta.js`; `groupAndSelect` ordena carpeta→cámara→hora→nombre, corta por >2,5 s, cámara/carpeta distinta o hash ausente; solo une tomas contiguas; sin hora → umbral estricto (5) + `groupUncertain`.
+- `applyReviewFlags`: WARNING_GROUPING_UNCERTAIN / WARNING_FACES_UNAVAILABLE + `reviewNotes` accionables. Capa facial: `stats.available=false` + motivo; fallo por foto = `faceError` (no "sin personas").
+- Lightroom: `backend/lr_sync.py` (path_key, match_lr_jobs, lr_job_payload). Endpoints POST /api/lr/match y /api/lr/jobs. Jobs heredados sin ruta → `superseded` al reenviar con ruta. Plugin: applyDevelopSettings (también DNG), verifica con getDevelopSettings antes de /lr/complete; resumen aplicadas/faltantes/ambiguas/fallidas; sidecar .xmp opcional (nunca DNG ni RAW).
+- verifyXmp estricto (13 básicos, rangos, duplicados, HasSettings, 5★+Verde, errores por foto). Básicos sin dato IA → 0 (preset no los aporta). `confidenceNotes` (WB/edición baja confianza).
+- `lupa` solo en `backend/requirements-test.txt`. Untracked locales excluidos en `.git/info/exclude`.
+- Pendiente validación real: catálogo LrC (applyDevelopSettings con CameraProfile de perfiles Look, etiqueta verde según juego de etiquetas, Temperature en JPG), EXIF de CR3/NEF/ARW reales.

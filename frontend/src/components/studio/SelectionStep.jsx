@@ -3,6 +3,8 @@ import { ArrowRight, Layers, CheckCircle2, Images, ScanFace, Users, User, AlertT
 import { cachePhoto, readPhoto } from "@/lib/workspaceCache";
 import { thumbBase64 } from "@/lib/rawThumb";
 import { analyzeFile, groupAndSelect, mapLimit } from "@/lib/imageAnalysis";
+import { applyReviewFlags } from "@/lib/selectionLogic";
+import { readCaptureMetaFromFile } from "@/lib/captureMeta";
 import { applyFaceLayer } from "@/lib/faceEngine";
 import SelectionProgress from "@/components/studio/SelectionProgress";
 
@@ -22,8 +24,10 @@ export default function SelectionStep({ files, cacheKey, onCheckpoint, onContinu
         const arr = Array.from(files);
         // Analiza el contenido real (nitidez + exposición + hash visual) de cada RAW.
         const previews=new Map();
+        const metas=new Map();
         const metrics=await mapLimit(arr,3,async f=>{
           if(!active) throw new Error('Análisis pausado');
+          metas.set(f,await readCaptureMetaFromFile(f)); // hora de captura + cámara (agrupado)
           const identity={name:f.name,size:f.size,lastModified:f.lastModified,relativePath:f.webkitRelativePath || f.name};
           const cached=await readPhoto(cacheKey,identity);
           if(cached?.metrics && cached?.preview){previews.set(f,cached.preview);return cached.metrics;}
@@ -33,13 +37,18 @@ export default function SelectionStep({ files, cacheKey, onCheckpoint, onContinu
           if (active) setProgress(Math.round((done / arr.length) * 100));
         });
         if (!active) return;
-        const items = arr.map((f, i) => ({ name: f.name, size: f.size, file: f, metrics: metrics[i] }));
+        const items = arr.map((f, i) => ({ name: f.name, size: f.size, file: f, metrics: metrics[i],
+          relativePath: f.webkitRelativePath || f.name, meta: metas.get(f) }));
         const analyzed = groupAndSelect(items);
         const photos = analyzed.map((it, i) => ({
           id: `${it.burstId}-${i}-${it.name}`,
           name: it.name,
           size: it.size,
           burstId: it.burstId,
+          seq: it.seq,
+          groupUncertain: !!it.groupUncertain,
+          captureTime: it.meta?.captureTime ?? null,
+          camera: it.meta?.camera ?? null,
           score: it.score,
           thumb:previews.get(it.file) ? 'data:image/jpeg;base64,'+previews.get(it.file) : null,
           relativePath:it.file.webkitRelativePath || it.name,lastModified:it.file.lastModified,
@@ -57,12 +66,13 @@ export default function SelectionStep({ files, cacheKey, onCheckpoint, onContinu
           if (active) setFaceProgress(t ? Math.round((d / t) * 100) : 100);
         });
         if (!active) return;
+        applyReviewFlags(photos, { available: faceStats?.available !== false, reason: faceStats?.reason });
 
         const bursts = new Set(photos.map((p) => p.burstId)).size;
         const selected = photos.filter((p) => p.selectedForEdit).length;
         await onCheckpoint?.(photos,people);
         if(!active) return;
-        setResult({ photos, total: photos.length, bursts, selected, faceStats, people });
+        setResult({ photos, total: photos.length, bursts, selected, faceStats, people, uncertain: photos.filter((p) => p.groupUncertain).length });
       } catch (e) {
         if (active) setError("No se pudo completar o guardar el análisis: "+e.message+". El progreso ya guardado se conserva.");
       }
@@ -94,7 +104,7 @@ export default function SelectionStep({ files, cacheKey, onCheckpoint, onContinu
     <section className="animate-fade-up rounded-xl border border-zinc-800 bg-[#141418] p-6" data-testid="selection-result">
       <h2 className="font-display text-lg font-semibold">Análisis local completado</h2>
       <p className="mt-1.5 text-sm text-zinc-500">
-        El análisis local agrupó las secuencias por similitud y propone las tomas más nítidas y mejor expuestas.
+        El análisis local agrupó las secuencias por hora de captura, cámara y carpeta (el parecido visual es una señal de apoyo) y propone las tomas más nítidas y mejor expuestas.
         En «Revisar selección» → «Por ráfaga» puedes comparar todas las candidatas con el modelo de IA configurado y guardar una sola ganadora por ráfaga.
       </p>
 
@@ -108,11 +118,30 @@ export default function SelectionStep({ files, cacheKey, onCheckpoint, onContinu
         ))}
       </div>
 
-      {fs && (
+      {result.uncertain > 0 && (
+        <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-3 text-xs text-amber-200" data-testid="grouping-uncertain">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {result.uncertain} fotos sin hora de captura legible se agruparon solo por parecido visual, de forma conservadora. Revísalas en «Con advertencia».
+        </p>
+      )}
+
+      {fs && fs.available === false && (
+        <p className="mt-3 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.06] p-3 text-xs text-amber-200" data-testid="face-unavailable">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Análisis facial no disponible: {fs.reason}. La propuesta se basa solo en nitidez y exposición; revisa ojos y expresiones manualmente (puedes recargar para reintentar).
+        </p>
+      )}
+
+      {fs && fs.available !== false && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-zinc-800 bg-[#1c1c22] p-4" data-testid="face-stats">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800/70 px-2.5 py-1 text-xs text-zinc-300">
             <ScanFace className="h-3.5 w-3.5 text-emerald-400" /> {fs.analyzed} analizadas con caras
           </span>
+          {fs.failed > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300" data-testid="face-failed">
+              <AlertTriangle className="h-3.5 w-3.5" /> {fs.failed} sin análisis facial (revisar)
+            </span>
+          )}
           <span className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800/70 px-2.5 py-1 text-xs text-zinc-300">
             <Users className="h-3.5 w-3.5 text-sky-400" /> {fs.groupPhotos} de grupo
           </span>

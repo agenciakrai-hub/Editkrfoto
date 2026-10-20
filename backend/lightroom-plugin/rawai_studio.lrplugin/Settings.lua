@@ -15,13 +15,14 @@ LrTasks.startAsyncTask(function()
 LrFunctionContext.callWithContext("rawai_settings", function(context)
     local f = LrView.osFactory()
     local props = import("LrBinding").makePropertyTable(context)
-    props.baseUrl = server(); props.token = prefs.token or ""
+    props.baseUrl = server(); props.token = prefs.token or ""; props.writeSidecar = prefs.writeSidecar == true
     local result = LrDialogs.presentModalDialog { title = "EditFlow — Conectar Lightroom", contents = f:column {
         bind_to_object = props, spacing = f:control_spacing(),
         f:static_text {title = "Servidor de este trabajo:"},
         f:edit_field {value = LrView.bind("baseUrl"),width_in_chars = 45},
         f:static_text {title = "Token de EditFlow (copiar desde la web):"},
         f:edit_field {value = LrView.bind("token"),width_in_chars = 45},
+        f:checkbox {title = "Además escribir sidecar .xmp junto al RAW (interoperable; nunca en DNG ni en el RAW)", value = LrView.bind("writeSidecar")},
     }}
     if result ~= "ok" then return end
     local base = (props.baseUrl or ""):gsub("^%s+", ""):gsub("%s+$", ""):gsub("/+$", ""):gsub("/api$", "")
@@ -32,7 +33,7 @@ LrFunctionContext.callWithContext("rawai_settings", function(context)
     if not ok or not data or not data.ok then
         LrDialogs.message("EditFlow", "No se pudo vincular. Comprueba que el token sea de " .. base .. ". HTTP " .. tostring(headers and headers.status or "sin respuesta"), "error"); return
     end
-    prefs.baseUrl=base; prefs.token=token
+    prefs.baseUrl=base; prefs.token=token; prefs.writeSidecar=props.writeSidecar == true
     LrDialogs.message("EditFlow", "Conexión comprobada y guardada.", "info")
 end)
 end)

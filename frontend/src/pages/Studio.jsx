@@ -138,6 +138,7 @@ export default function Studio() {
       // calculados individualmente desde la fotometría y el color. "No tocar" = 0 / As Shot.
       photos: sendPhotos.map((p) => ({
         filename: p.name,
+        relative_path: p.relativePath || p.name,
         ai_basics: computeAiBasics(
           { photometrics: p.photometrics, color: p.color, faces: p.faces },
           { mode, deadzone: "prudent", wbStrength: 0.5, subjectDetected: (p.faceCount || 0) > 0 }
@@ -170,6 +171,7 @@ export default function Studio() {
         ambience: r.ambience, wbSource: r.wbSource, skinDetected: r.skinDetected,
         exposureClassification: r.exposureClassification,
         editingConfidence: r.editingConfidence, whiteBalanceConfidence: r.whiteBalanceConfidence,
+        wbApplied: r.aiBasicAdjustments?.temperature != null,
         reasoningSummary: r.reasoningSummary,
       };
     }

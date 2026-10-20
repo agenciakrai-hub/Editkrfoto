@@ -13,6 +13,7 @@ const APPLIED = `<x:xmpmeta xmlns:x="adobe:ns:meta/">
    crs:Exposure2012="+0.35" crs:Contrast2012="6" crs:Highlights2012="-35"
    crs:Shadows2012="0" crs:Whites2012="-6" crs:Blacks2012="-13"
    crs:Vibrance="0" crs:Saturation="0" crs:Dehaze="0"
+   crs:Texture="0" crs:Clarity2012="0"
    crs:ToneCurveName2012="Custom" crs:SplitToningHighlightHue="45"
    crs:WhiteBalance="As Shot"
    xmp:Rating="5" xmp:Label="Verde">
@@ -64,6 +65,57 @@ describe("verifyXmp", () => {
     const v = verifyXmp(withLook);
     expect(v.isPresetTemplate).toBe(false); // el Look del perfil NO debe marcarse como wrapper
     expect(v.ok).toBe(true);
+  });
+});
+
+describe("verifyXmp estricto (13 básicos, rangos, metadatos, errores por foto)", () => {
+  const set = (xmp, attr, value) => xmp.replace(new RegExp(`crs:${attr}="[^"]*"`), `crs:${attr}="${value}"`);
+  const drop = (xmp, attr) => xmp.replace(new RegExp(`\\s*crs:${attr}="[^"]*"`), "");
+
+  test("As Shot sin Temperature/Tint es válido; Custom sin ellos no", () => {
+    expect(verifyXmp(APPLIED).errors).toEqual([]);
+    const custom = set(APPLIED, "WhiteBalance", "Custom");
+    const v = verifyXmp(custom);
+    expect(v.ok).toBe(false);
+    expect(v.errors.join(" ")).toMatch(/Falta Temp/);
+  });
+
+  test("falta un básico → error con su nombre", () => {
+    const v = verifyXmp(drop(APPLIED, "Texture"));
+    expect(v.ok).toBe(false);
+    expect(v.hasBasics).toBe(false);
+    expect(v.errors).toContain("Falta Textura");
+  });
+
+  test.each([["Exposure2012", "NaN"], ["Exposure2012", "Infinity"], ["Contrast2012", "abc"], ["Contrast2012", ""]])(
+    "%s=%s no finito → error", (k, val) => {
+      const v = verifyXmp(set(APPLIED, k, val));
+      expect(v.ok).toBe(false);
+      expect(v.errors.some((e) => /no es un número/.test(e))).toBe(true);
+    });
+
+  test("fuera de rango → error", () => {
+    expect(verifyXmp(set(APPLIED, "Exposure2012", "+7.00")).errors.join()).toMatch(/fuera de rango/);
+    expect(verifyXmp(set(APPLIED, "Highlights2012", "-140")).errors.join()).toMatch(/fuera de rango/);
+    const wb = set(set(APPLIED, "WhiteBalance", "Custom"), "Dehaze", "0").replace('crs:Dehaze="0"', 'crs:Dehaze="0" crs:Temperature="900" crs:Tint="0"');
+    expect(verifyXmp(wb).errors.join()).toMatch(/Temp\. fuera de rango/);
+  });
+
+  test("básico duplicado (preset + IA) → error", () => {
+    const dup = APPLIED.replace('crs:Dehaze="0"', 'crs:Dehaze="0" crs:Contrast2012="40"');
+    expect(verifyXmp(dup).errors.join()).toMatch(/Contraste aparece 2 veces/);
+  });
+
+  test("exige HasSettings, 5★ y etiqueta Verde/Green", () => {
+    expect(verifyXmp(drop(APPLIED, "HasSettings")).errors.join()).toMatch(/HasSettings/);
+    expect(verifyXmp(APPLIED.replace('xmp:Rating="5"', 'xmp:Rating="3"')).errors.join()).toMatch(/5★/);
+    expect(verifyXmp(APPLIED.replace('xmp:Label="Verde"', 'xmp:Label="Rojo"')).errors.join()).toMatch(/Verde/);
+    expect(verifyXmp(APPLIED.replace('xmp:Label="Verde"', 'xmp:Label="Green"')).ok).toBe(true);
+  });
+
+  test("forma de elemento <crs:X>v</crs:X> sigue siendo compatible", () => {
+    const el = drop(APPLIED, "Clarity2012").replace("</rdf:Description>", "<crs:Clarity2012>5</crs:Clarity2012></rdf:Description>");
+    expect(verifyXmp(el).ok).toBe(true);
   });
 });
 

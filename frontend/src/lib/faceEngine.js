@@ -9,6 +9,13 @@ import { clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
 import { decideSequence, splitByMainFace } from "@/lib/burstDecision";
 
 let modelsPromise = null;
+
+export function faceUnavailableReason(e) {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "sin conexión para descargar los modelos";
+  const msg = String(e?.message || "");
+  if (/webgl|backend/i.test(msg)) return "el navegador no permite la aceleración gráfica necesaria";
+  return "no se pudieron cargar los modelos de caras";
+}
 export function loadFaceModels() {
   if (!modelsPromise) {
     const url = (process.env.PUBLIC_URL || "") + "/models";
@@ -153,7 +160,10 @@ async function cropFace(file, box) {
 // Devuelve stats + people (protagonistas agrupados por reconocimiento facial, para filtrar/etiquetar).
 export async function applyFaceLayer(photos, onProgress) {
   try { await loadFaceModels(); }
-  catch { return { photos, stats: null, people: [], error: true }; }
+  catch (e) {
+    const reason = faceUnavailableReason(e);
+    return { photos, stats: { available: false, reason, analyzed: 0, failed: 0 }, people: [], error: true };
+  }
 
   const burstSize = {};
   photos.forEach((p) => { burstSize[p.burstId] = (burstSize[p.burstId] || 0) + 1; });
@@ -164,14 +174,21 @@ export async function applyFaceLayer(photos, onProgress) {
     let url = null;
     try {
       url = await extractThumb(p.file);
-      p.faces = url ? await detectFacesFromUrl(url) : [];
-    } catch { p.faces = []; }
+      if (!url) throw new Error("sin vista previa incrustada");
+      p.faces = await detectFacesFromUrl(url);
+      p.facesAnalyzed = true;
+      p.faceError = null;
+    } catch (e) {
+      // Fallo REAL de detección: no es "sin personas"; se marca para revisión manual.
+      p.faces = [];
+      p.facesAnalyzed = false;
+      p.faceError = e?.message || "detección fallida";
+    }
     finally { if (url) URL.revokeObjectURL(url); }
     p.faceCount = p.faces.length;
     p.isGroup = p.faceCount >= 3;
-    p.noPeople = p.faceCount === 0;
+    p.noPeople = p.facesAnalyzed && p.faceCount === 0;
     p.faceScore = photoFaceScore(p.faces); // ojos/sonrisa/tamaño
-    p.facesAnalyzed = true;
     done++;
     onProgress && onProgress(done, targets.length);
   });
@@ -194,8 +211,8 @@ export async function applyFaceLayer(photos, onProgress) {
   let doubts = 0;
   let nextBurstId = 1;
   for (const g of Object.values(groups)) {
-    // Orden temporal (los frames de una ráfaga son secuenciales por nombre de archivo).
-    const ordered = [...g].sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
+    // Orden de captura (seq de groupAndSelect: hora/cámara/carpeta; nombre como desempate).
+    const ordered = [...g].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
     // Agrupación ESTRICTA: divide la ráfaga si la cara PRINCIPAL cambia de posición o ángulo.
     const subgroups = splitByMainFace(ordered);
     for (const sub of subgroups) {
@@ -262,6 +279,8 @@ export async function applyFaceLayer(photos, onProgress) {
 
   const analyzed = photos.filter((p) => p.facesAnalyzed);
   const stats = {
+    available: true,
+    failed: photos.filter((p) => p.faceError).length,
     analyzed: analyzed.length,
     withPeople: analyzed.filter((p) => p.faceCount > 0).length,
     groupPhotos: analyzed.filter((p) => p.isGroup).length,

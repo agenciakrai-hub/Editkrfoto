@@ -72,6 +72,12 @@ PROFILES_A = [
 ]
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _seed_user_a(_require_tokens):
+    # Con xdist --dist loadscope cada clase puede ir a otro worker: siembra A en cada uno.
+    requests.post(f"{API}/profile-extractor/save", json={"profiles": PROFILES_A}, headers=_hdr(TOKEN_A))
+
+
 # ---------------------------- AUTH ----------------------------
 class TestAuth:
     def test_export_json_requires_auth(self):

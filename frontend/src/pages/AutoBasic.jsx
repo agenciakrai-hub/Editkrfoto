@@ -97,6 +97,7 @@ export default function AutoBasic() {
   // Para "Enviar a Lightroom": genera los XMP (sidecar) por nombre de archivo original.
   const buildPhotosForSync = () => items.map((it) => ({
     filename: it.name,
+    relative_path: it.file?.webkitRelativePath || it.name,
     xmp_content: buildStyleXmp(it.name, basicFor(it), profile || "Adobe Standard"),
   }));
 
