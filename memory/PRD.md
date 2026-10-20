@@ -267,3 +267,5 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
 - verifyXmp estricto (13 básicos, rangos, duplicados, HasSettings, 5★+Verde, errores por foto). Básicos sin dato IA → 0 (preset no los aporta). `confidenceNotes` (WB/edición baja confianza).
 - `lupa` solo en `backend/requirements-test.txt`. Untracked locales excluidos en `.git/info/exclude`.
 - Pendiente validación real: catálogo LrC (applyDevelopSettings con CameraProfile de perfiles Look, etiqueta verde según juego de etiquetas, Temperature en JPG), EXIF de CR3/NEF/ARW reales.
+
+## Suite Pytest (2026-10): -n 2 --dist loadscope reparte clases entre workers; los tests NO deben compartir estado entre clases (usar fixtures scope="class"/"module"). Requiere TOKEN_A/TOKEN_B sembrados.

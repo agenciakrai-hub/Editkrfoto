@@ -169,9 +169,21 @@ class TestLearning:
 
 # --------------------------- generate-xmp ZIP ---------------------------
 class TestGenerateXmp:
+    # Proyecto PROPIO: con xdist --dist loadscope cada clase puede ir a otro worker,
+    # así que no puede depender de TestProjects._pid (lo rellena otra clase/proceso).
+    _pid = None
+
+    @pytest.fixture(scope="class", autouse=True)
+    def _project(self):
+        r = requests.post(f"{API}/projects", headers=_hdr(),
+                          json={"name": "TEST_iter13_xmp", "total_images": 2})
+        assert r.status_code == 200, r.text
+        TestGenerateXmp._pid = r.json()["id"]
+        yield
+        requests.delete(f"{API}/projects/{TestGenerateXmp._pid}", headers=_hdr())
+
     def test_generate_xmp_zip(self):
-        pid = TestProjects._pid
-        assert pid, "requires previous project"
+        pid = TestGenerateXmp._pid
         payload = {
             "photos": [
                 {"filename": "IMG_0001.CR3",
@@ -194,7 +206,7 @@ class TestGenerateXmp:
         assert "xmlns:crs" in body
 
     def test_project_status_completed_after_generate(self):
-        pid = TestProjects._pid
+        pid = TestGenerateXmp._pid
         r = requests.get(f"{API}/projects/{pid}", headers=_hdr())
         assert r.status_code == 200
         assert r.json()["status"] == "completed"
