@@ -40,7 +40,7 @@ export default function Login() {
         </h1>
         <p className="mt-5 max-w-md text-sm leading-7 text-zinc-400">
           Del proyecto al ZIP final sin salir de la app: importa la carpeta, deja que la IA
-          agrupe ráfagas y marque las mejores tomas, revisa y descarga los XMP. Los RAW nunca se modifican.
+          agrupe ráfagas y marque las mejores tomas, revisa y descarga sidecars XMP o copias DNG con metadatos. Los archivos originales permanecen intactos.
         </p>
 
         <button

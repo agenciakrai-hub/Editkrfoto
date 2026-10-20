@@ -13,7 +13,7 @@ export default function ConsentPanel({ photoCount, estimates, busy, onAccept }) 
       <div className="mt-3 space-y-2 text-xs text-muted-foreground">
         <p className="font-medium text-foreground">ESTE ANÁLISIS UTILIZA IA REMOTA.</p>
         <p>SE ENVIARÁN PREVIEWS REDUCIDAS (máx. 512 px, SIN EXIF NI GPS, generadas localmente) DE ALGUNAS FOTOGRAFÍAS.</p>
-        <p>LOS ARCHIVOS ORIGINALES NUNCA SE ENVIARÁN. NADA SE SUBE A NINGÚN ALMACENAMIENTO: las miniaturas viajan inline y se descartan.</p>
+        <p>Los archivos originales nunca se envían. Solo se comparten miniaturas reducidas. La app no las conserva; el proveedor de IA configurado puede aplicar sus propias políticas de procesamiento y retención.</p>
         <p>
           Volumen estimado para {photoCount} fotos: ≈ {estimates.calls} llamadas · ≈ {estimates.mb} MB en total ·
           motor de visión IA de RAW AI Studio (Emergent). Usa el proveedor/modelo configurado en IA → Proveedores.

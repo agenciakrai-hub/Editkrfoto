@@ -186,7 +186,7 @@ export default function Studio() {
       <h1 className="font-display mt-1 text-2xl font-semibold">{project.name}</h1>
       <p className="mt-1.5 max-w-2xl text-sm leading-6 text-zinc-500">
         Del proyecto al ZIP final: importa la carpeta, deja que la IA agrupe ráfagas y marque las mejores
-        tomas, revisa, aplica correcciones y descarga los XMP. Los RAW nunca se modifican.
+        tomas, revisa, aplica correcciones y descarga sidecars XMP o copias DNG con metadatos. Los archivos originales permanecen intactos.
       </p>
 
       <div className="mt-6"><Stepper current={STEP_INDEX[step]} /></div>
