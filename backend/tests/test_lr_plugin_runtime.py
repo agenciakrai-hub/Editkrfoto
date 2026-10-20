@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-LuaRuntime = pytest.importorskip('lupa').LuaRuntime
+from lupa import LuaRuntime  # requirements-test.txt: si falta, la suite falla (no se omite)
 PLUGIN = Path(__file__).parents[1] / 'lightroom-plugin/rawai_studio.lrplugin'
 
 

@@ -269,3 +269,4 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
 - Pendiente validación real: catálogo LrC (applyDevelopSettings con CameraProfile de perfiles Look, etiqueta verde según juego de etiquetas, Temperature en JPG), EXIF de CR3/NEF/ARW reales.
 
 ## Suite Pytest (2026-10): -n 2 --dist loadscope reparte clases entre workers; los tests NO deben compartir estado entre clases (usar fixtures scope="class"/"module"). Requiere TOKEN_A/TOKEN_B sembrados.
+- Tests de integración externos: `@pytest.mark.integration`, deseleccionados en local (tests/conftest.py, listados en el resumen). Ejecutar: `RUN_INTEGRATION=1 python -m pytest -n 0 -m integration tests` (+ `INTEGRATION_PROFILE_PAGE_URL`). Cobertura determinista: tests/test_profile_extractor_unit.py. lupa obligatoria (requirements-test.txt).

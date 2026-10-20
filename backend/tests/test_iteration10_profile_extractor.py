@@ -109,17 +109,14 @@ class TestAnalyzeHtml:
         assert isinstance(data.get("errors"), list) and len(data["errors"]) >= 1
         assert "perfil" in " ".join(data["errors"]).lower()
 
+    @pytest.mark.integration
     def test_analyze_non_html_non_profile(self):
-        # A plain text file that is neither HTML nor a profile.
-        try:
-            r = requests.post(f"{API}/profile-extractor/analyze",
-                              json={"url": "https://raw.githubusercontent.com/adobe/xmp-docs/master/README.md"},
-                              headers=_hdr(TOKEN_A), timeout=30)
-        except requests.exceptions.Timeout:
-            pytest.skip("upstream unreachable: timeout")
-        # If reachable, backend returns 200 with either an html-parsed-empty or an error message.
-        if r.status_code != 200:
-            pytest.skip(f"upstream unreachable: {r.status_code}")
+        # INTEGRACIÓN (GitHub real). Un fallo de red es un fallo. Cobertura determinista:
+        # test_profile_extractor_unit.py::test_analyze_non_html_non_profile_is_reported
+        r = requests.post(f"{API}/profile-extractor/analyze",
+                          json={"url": "https://raw.githubusercontent.com/adobe/xmp-docs/master/README.md"},
+                          headers=_hdr(TOKEN_A), timeout=60)
+        assert r.status_code == 200, r.text
         data = r.json()
         # markdown starts with '#' so not HTML; expect found==0 and an error
         assert data["found"] == 0
@@ -206,12 +203,24 @@ class TestSaveDedupList:
         r = requests.delete(f"{API}/profile-extractor/profiles/{pid}", headers=_hdr(TOKEN_B))
         assert r.status_code == 404
 
+    @pytest.mark.integration
     def test_analyze_rerun_marks_existing(self):
-        # Re-analyze example.com won't find these, so simulate by saving again with new url
-        # Instead: verify analyze dedup logic by hitting endpoint that returns existing_keys
-        # We craft a fake analyze via a URL that resolves to HTML with no links; dedup path
-        # is exercised in save. Skip if we cannot host a real xmp.
-        pytest.skip("Requires public reachable .xmp/HTML w/ links; environment-limited")
+        # INTEGRACIÓN: necesita una página HTML pública con enlaces .xmp/.dcp/.lrtemplate en
+        # INTEGRATION_PROFILE_PAGE_URL. Sin ella FALLA (no se omite). Cobertura determinista:
+        # test_profile_extractor_unit.py::test_analyze_rerun_marks_existing_profiles
+        url = os.environ.get("INTEGRATION_PROFILE_PAGE_URL")
+        assert url, "Define INTEGRATION_PROFILE_PAGE_URL (página pública con enlaces a perfiles)"
+        first = requests.post(f"{API}/profile-extractor/analyze", json={"url": url}, headers=_hdr(TOKEN_A), timeout=60)
+        assert first.status_code == 200, first.text
+        data = first.json()
+        assert data["found"] >= 1, data
+        assert requests.post(f"{API}/profile-extractor/save", json={"profiles": data["profiles"]},
+                             headers=_hdr(TOKEN_A), timeout=30).status_code == 200
+        again = requests.post(f"{API}/profile-extractor/analyze", json={"url": url}, headers=_hdr(TOKEN_A), timeout=60)
+        assert again.status_code == 200, again.text
+        d2 = again.json()
+        assert d2["new"] == 0 and d2["existing"] == d2["found"] == data["found"]
+        assert all(p["status"] == "existing" for p in d2["profiles"])
 
     def test_delete_own_profile(self):
         assert TestSaveDedupList.saved_ids
