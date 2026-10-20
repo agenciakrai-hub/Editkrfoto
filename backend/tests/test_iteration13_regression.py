@@ -219,6 +219,8 @@ class TestProfileExtractor:
         assert r.status_code == 200
         assert isinstance(r.json(), list)
 
+    # INTEGRACIÓN (DNS real). Determinista: test_external_deterministic.py::test_unresolvable_host_is_structured_400
+    @pytest.mark.integration
     def test_analyze_unreachable_url_returns_structured_error(self):
         """After the _parse_profile refactor, unreachable URLs must return a
         structured 400 (not a 500 crash)."""

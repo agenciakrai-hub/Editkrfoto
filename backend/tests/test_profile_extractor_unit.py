@@ -43,6 +43,9 @@ class FakeDb:
         self.queries.append(flt)
         return FakeCursor([d for d in self.existing if d.get("user_id") == flt.get("user_id")])
 
+    async def insert_one(self, doc):
+        self.existing.append(dict(doc))
+
 
 def fake_fetch(responses):
     calls = []
@@ -103,3 +106,22 @@ def test_analyze_linked_file_failure_is_documented_not_dropped(monkeypatch):
                                           PAGE + "retrato.xmp": requests.exceptions.ReadTimeout("t")})
     by = {p["download_url"]: p for p in data["profiles"]}
     assert by[PAGE + "retrato.xmp"]["compatible"] == "documented" and data["found"] == 2
+
+
+def test_analyze_save_rerun_full_cycle_marks_all_existing(monkeypatch):
+    # Equivalente completo de TestSaveDedupList::test_analyze_rerun_marks_existing (página mock).
+    responses = {PAGE: (HTML, "text/html"), PAGE + "fiel.xmp": (XMP_A, "x"), PAGE + "retrato.xmp": (XMP_B, "x")}
+    db = FakeDb()
+    monkeypatch.setattr(server, "db", db)
+    monkeypatch.setattr(server, "_fetch", fake_fetch(responses))
+    req = server.AnalyzeUrlRequest(url=PAGE)
+    first = asyncio.run(server.analyze_url(req, USER))
+    assert first["found"] == 2 and first["new"] == 2 and first["existing"] == 0
+    saved = asyncio.run(server.save_profiles(server.SaveProfilesRequest(profiles=first["profiles"]), USER))
+    assert saved == {"saved": 2} and len(db.existing) == 2
+    assert all(d["user_id"] == "unit-user" and d["status"] == "saved" for d in db.existing)
+    again = asyncio.run(server.analyze_url(req, USER))
+    assert again["new"] == 0 and again["existing"] == again["found"] == first["found"]
+    assert all(p["status"] == "existing" for p in again["profiles"])
+    resave = asyncio.run(server.save_profiles(server.SaveProfilesRequest(profiles=again["profiles"]), USER))
+    assert resave == {"saved": 0} and len(db.existing) == 2  # sin duplicados

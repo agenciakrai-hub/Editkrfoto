@@ -84,6 +84,10 @@ def _wait_backend_up(timeout=45):
 
 # ---------- Startup reaper ----------
 class TestStartupReaper:
+    # INTEGRACIÓN DESTRUCTIVA: reinicia el backend compartido (supervisorctl) → rompe cualquier
+    # test en paralelo (502 / "Interrumpido por reinicio"). Ejecutar aislado con RUN_INTEGRATION=1 -n 0.
+    # Determinista: test_reaper_deterministic.py
+    @pytest.mark.integration
     def test_reaper_marks_stuck_docs_failed(self, mongo_db, user_a):
         now = datetime.now(timezone.utc).isoformat()
         job_id = f"test-job-reaper-{int(time.time()*1000)}"

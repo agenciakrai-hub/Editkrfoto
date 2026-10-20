@@ -36,8 +36,10 @@ def _require_token():
 
 
 # ==================== SECURITY: SSRF ====================
+@pytest.mark.integration
 class TestSSRF:
-    """SSRF guard on photographer-styles gallery analysis."""
+    """SSRF guard on photographer-styles gallery analysis (INTEGRACIÓN: backend en marcha + tarea
+    en segundo plano). Determinista: test_external_deterministic.py::test_ssrf_*"""
 
     INTERNAL_URLS = [
         "http://169.254.169.254/latest/meta-data/",

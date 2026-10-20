@@ -172,6 +172,8 @@ class TestPhotographerStylesScoping:
 
 # ---------- Happy path (one real analysis) ----------
 class TestPhotographerStylesHappyPath:
+    # INTEGRACIÓN (Wikipedia + LLM reales). Determinista: test_external_deterministic.py::test_style_analysis_reaches_ready
+    @pytest.mark.integration
     def test_wikipedia_gallery_reaches_ready(self, user_a, mongo_db):
         c = _client(user_a["token"])
         r = c.post(f"{BASE_URL}/api/photographer-styles", json={

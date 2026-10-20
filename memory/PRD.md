@@ -270,3 +270,4 @@ selección donde ver seleccionadas/descartadas y decidir manualmente qué entra 
 
 ## Suite Pytest (2026-10): -n 2 --dist loadscope reparte clases entre workers; los tests NO deben compartir estado entre clases (usar fixtures scope="class"/"module"). Requiere TOKEN_A/TOKEN_B sembrados.
 - Tests de integración externos: `@pytest.mark.integration`, deseleccionados en local (tests/conftest.py, listados en el resumen). Ejecutar: `RUN_INTEGRATION=1 python -m pytest -n 0 -m integration tests` (+ `INTEGRATION_PROFILE_PAGE_URL`). Cobertura determinista: tests/test_profile_extractor_unit.py. lupa obligatoria (requirements-test.txt).
+- Suite det. estable: el test de reaper (supervisorctl restart) era la causa de 502/"Interrumpido por reinicio" en paralelo → ahora integración; determinista en test_reaper_deterministic.py. Externos (Wikipedia/LLM, DNS, SSRF en vivo) → integración; deterministas en test_external_deterministic.py.
