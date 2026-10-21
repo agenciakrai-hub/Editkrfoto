@@ -18,6 +18,11 @@ test('finished editing reopens result, and unfinished editing resumes mode',()=>
  expect(savedStep({report:{total:2}})).toBe('review');
 });
 
+test('an explicitly restarted selection resumes after reload',()=>{
+ expect(savedStep({workspaceStep:'selection',selectionCompleted:false})).toBe('selection');
+ expect(savedStep({workspaceStep:'selection',selectionCompleted:true})).toBe('review');
+});
+
 test('restored photos preserve relative paths and file metadata for stable relinking',()=>{
  const photo={name:'A.DNG',relativePath:'Wedding/RAW/A.DNG',size:42,lastModified:123,selectedForEdit:true,captureTime:'2026-10-20T12:00:00Z',camera:'Camera X'};
  const restored=restorePhotos({workspacePhotos:[packPhoto(photo)]})[0];

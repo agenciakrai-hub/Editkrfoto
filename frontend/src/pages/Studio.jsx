@@ -66,7 +66,9 @@ export default function Studio() {
     }));
     setPhotos(restored);setSendPhotos(restored.filter(p=>p.selectedForEdit));
     setProfileChoice(st.profileChoice || {profile:'Adobe Color'});
-    setPresetInfo(st.presetInfo || null);setResult(st.report || null);setStep(savedStep(st));
+    setPresetInfo(st.presetInfo || null);setResult(st.report || null);
+    const restoredStep=savedStep(st);
+    setStep(restoredStep==='selection' && linkedFiles.length===0 ? 'review' : restoredStep);
   };
 
   const linkOriginals = async (selectedFiles,handle) => {
@@ -252,6 +254,16 @@ export default function Studio() {
         <p>{photos.length} fotos guardadas · {photos.filter(p=>p.selectedForEdit).length} seleccionadas. La selección y la edición se recuperan al abrir el trabajo.</p>
         <p className="mt-1 text-sm text-zinc-400">Las vistas previas se conservan en este dispositivo. {directoryConnected ? 'Carpeta original conectada.' : 'Reconecta para leer los originales o exportar DNG.'}</p>
         <button className="mt-3 underline" onClick={reconnectOriginals}>{directoryConnected ? 'Actualizar conexión de originales' : 'Reconectar originales'}</button>
+        {step==='review' && <div className="mt-3 border-t border-zinc-800 pt-3">
+          <button data-testid="reanalyze-selection-btn" disabled={!files.length} className="rounded-md border border-emerald-500/50 px-3 py-2 text-sm text-emerald-300 disabled:cursor-not-allowed disabled:opacity-50" onClick={async()=>{
+            if(!files.length) { toast.error('Reconecta la carpeta original antes de volver a analizar.'); return; }
+            try {
+              await persist({workspaceStep:'selection',selectionCompleted:false,report:null,xmpPayload:null});
+              setStep('selection');
+            } catch { toast.error('No se pudo guardar el reinicio del análisis. La selección actual se conserva.'); }
+          }}>Reanalizar selección</button>
+          <p className="mt-1 text-xs text-zinc-500">Vuelve a calcular las fotos elegidas con el motor actual; la selección guardada se conserva hasta terminar el nuevo análisis.</p>
+        </div>}
         {relink && <FolderSelectStep onContinue={async(f,_folderName,handle)=>{
           const raws=f.filter(file=>isRaw(file.name));
           await linkOriginals(raws,handle);
