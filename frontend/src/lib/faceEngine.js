@@ -1,12 +1,12 @@
 // Capa de caras (extra, no toca el motor de selección). 100% local y gratis:
 // usa @vladmandic/face-api con modelos servidos desde /public/models. Detecta caras sobre
 // la miniatura JPEG incrustada del RAW → cuenta personas, marca fotos de grupo / sin personas,
-// y afina las ráfagas: si las caras cambian de posición (aunque el cuerpo no), son fotos DISTINTAS.
+// y mejora la selección comparando ojos, expresión y nitidez facial dentro de cada ráfaga.
 import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
 import { clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
-import { decideSequence, splitByMainFace, ensureBurstWinners } from "@/lib/burstDecision";
+import { decideSequence, ensureBurstWinners } from "@/lib/burstDecision";
 
 let modelsPromise = null;
 
@@ -195,10 +195,10 @@ export async function applyFaceLayer(photos, onProgress) {
     onProgress && onProgress(done, targets.length);
   });
 
-  // DECISOR ÚNICO por secuencia (burstDecision): comparación ESTRICTA por etapas
-  // (técnica → sujetos/posiciones → ojos → comparación → decisión). Garantiza ≥1
-  // seleccionada por secuencia y añade warnings + auditoría por foto. applyFaceLayer
-  // ya NO impone selección propia: solo detecta caras y delega en el decisor.
+  // DECISOR ÚNICO por ráfaga detectada en la fase inicial. No volver a dividirla
+  // por cambios de pose/posición facial: eso aislaba fotogramas de la misma ráfaga
+  // y podía aprobar una toma con ojos cerrados sin compararla con las demás. Si el
+  // seguimiento de sujetos no es fiable, decideSequence lo marca para revisión.
   const groups = {};
   photos.forEach((p) => { (groups[p.burstId] = groups[p.burstId] || []).push(p); });
   const buildInput = (p) => ({
@@ -211,36 +211,29 @@ export async function applyFaceLayer(photos, onProgress) {
     })),
   });
   let doubts = 0;
-  let nextBurstId = 1;
-  for (const g of Object.values(groups)) {
+  for (const [originalBurstId, g] of Object.entries(groups)) {
     // Orden de captura (seq de groupAndSelect: hora/cámara/carpeta; nombre como desempate).
     const ordered = [...g].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
-    // Agrupación ESTRICTA: divide la ráfaga si la cara PRINCIPAL cambia de posición o ángulo.
-    const subgroups = splitByMainFace(ordered);
-    for (const sub of subgroups) {
-      const bid = nextBurstId++;
-      sub.forEach((p) => { p.burstId = bid; }); // re-numera secuencias tras la división
-      const byId = Object.fromEntries(sub.map((p) => [p.id, p]));
-      const res = decideSequence(sub.map(buildInput), bid);
-      for (const rp of res.photos) {
-        const p = byId[rp.id];
-        if (!p) continue;
-        p.selectedForEdit = rp.selected;
-        p.warning = rp.warning;
-        p.doubt = rp.warning;               // compat: "duda" = necesita revisión humana
-        p.warningTypes = rp.warningTypes;
-        p.state = rp.state;                 // SELECTED | SELECTED_WARNING | NOT_SELECTED
-        p.reason = rp.reason;
-        p.subjects = rp.subjects;
-        p.selectionConfidence = rp.selectionConfidence;
-        p.score = rp.score;
-        p.audit = {
-          technicalScore: rp.technicalScore, faceScore: rp.faceScore, eyesScore: rp.eyesScore,
-          expressionScore: rp.expressionScore, sharpnessScore: rp.sharpnessScore,
-          exposureScore: rp.exposureScore, selectionConfidence: rp.selectionConfidence,
-        };
-        if (rp.warning) doubts++;
-      }
+    const byId = Object.fromEntries(ordered.map((p) => [p.id, p]));
+    const res = decideSequence(ordered.map(buildInput), originalBurstId);
+    for (const rp of res.photos) {
+      const p = byId[rp.id];
+      if (!p) continue;
+      p.selectedForEdit = rp.selected;
+      p.warning = rp.warning;
+      p.doubt = rp.warning;               // compat: "duda" = necesita revisión humana
+      p.warningTypes = rp.warningTypes;
+      p.state = rp.state;                 // SELECTED | SELECTED_WARNING | NOT_SELECTED
+      p.reason = rp.reason;
+      p.subjects = rp.subjects;
+      p.selectionConfidence = rp.selectionConfidence;
+      p.score = rp.score;
+      p.audit = {
+        technicalScore: rp.technicalScore, faceScore: rp.faceScore, eyesScore: rp.eyesScore,
+        expressionScore: rp.expressionScore, sharpnessScore: rp.sharpnessScore,
+        exposureScore: rp.exposureScore, selectionConfidence: rp.selectionConfidence,
+      };
+      if (rp.warning) doubts++;
     }
   }
   ensureBurstWinners(photos);
