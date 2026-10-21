@@ -98,10 +98,12 @@ export function groupAndSelect(items) {
   }
 
   for (const group of groups.values()) {
-    const withM = group.filter((it) => it.metrics);
+    const hasQualityMetrics = (it) => Number.isFinite(it.metrics?.sharpness)
+      && Number.isFinite(it.metrics?.exposure);
+    const withM = group.filter(hasQualityMetrics);
     const maxSharp = withM.reduce((m, it) => Math.max(m, it.metrics.sharpness), 0) || 1;
     for (const it of group) {
-      if (it.metrics) {
+      if (hasQualityMetrics(it)) {
         const normS = it.metrics.sharpness / maxSharp;
         it.combined = 0.72 * normS + 0.28 * it.metrics.exposure;
       } else {
@@ -119,7 +121,7 @@ export function groupAndSelect(items) {
       // determinista y se avisa para que la persona pueda comparar la alternativa.
       it.selectedForEdit = it === best;
       it.selectionAmbiguous = it === best && ambiguous;
-      it.selectionAnalysisUnavailable = it === best && !it.metrics;
+      it.selectionAnalysisUnavailable = it === best && !hasQualityMetrics(it);
       it.score = Math.round(it.combined * 100);
     }
   }
