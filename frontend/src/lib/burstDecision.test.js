@@ -149,7 +149,7 @@ test("secuencia de 1 foto → esa foto queda seleccionada", () => {
 });
 
 // --- Empate --------------------------------------------------------------
-test("empate real → máximo 2 SELECTED+WARNING", () => {
+test("empate real → una sola ganadora con WARNING para revisión humana", () => {
   const clean = [face(0.5, 0.30, { smile: 0.6, sharp: 0.8 })];
   const res = decideSequence([
     photo("A", 0.90, clean),
@@ -157,11 +157,10 @@ test("empate real → máximo 2 SELECTED+WARNING", () => {
     photo("C", 0.89, clean),
   ]);
   const sel = res.photos.filter((p) => p.selected);
-  expect(sel.length).toBeGreaterThanOrEqual(1);
-  expect(sel.length).toBeLessThanOrEqual(MAX_SELECTED);
-  if (sel.length === 2) {
-    sel.forEach((p) => { expect(p.warningTypes).toContain(WARNING.TIE); });
-  }
+  expect(MAX_SELECTED).toBe(1);
+  expect(sel).toHaveLength(1);
+  expect(sel[0].id).toBe(res.selectedPhoto);
+  expect(sel[0].warningTypes).toContain(WARNING.TIE);
 });
 
 // --- Sin personas --------------------------------------------------------
