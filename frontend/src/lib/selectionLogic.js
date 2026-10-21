@@ -6,7 +6,7 @@ export function hamming(a, b) {
 }
 
 export const PHASH_THRESHOLD = 8;    // distancia máx. para "misma secuencia"
-export const AMBIGUOUS_MARGIN = 0.92; // 2ª mejor ≥92% de la mejor → también se elige
+export const AMBIGUOUS_MARGIN = 0.97; // empate visual: la alternativa se marca para revisión, no se aprueba automáticamente
 
 function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
 
@@ -98,20 +98,30 @@ export function groupAndSelect(items) {
   }
 
   for (const group of groups.values()) {
-    const withM = group.filter((it) => it.metrics);
+    const hasQualityMetrics = (it) => Number.isFinite(it.metrics?.sharpness)
+      && Number.isFinite(it.metrics?.exposure);
+    const withM = group.filter(hasQualityMetrics);
     const maxSharp = withM.reduce((m, it) => Math.max(m, it.metrics.sharpness), 0) || 1;
     for (const it of group) {
-      if (it.metrics) {
+      if (hasQualityMetrics(it)) {
         const normS = it.metrics.sharpness / maxSharp;
         it.combined = 0.72 * normS + 0.28 * it.metrics.exposure;
       } else {
         it.combined = 0.5;
       }
     }
-    const best = group.reduce((a, b) => (b.combined > a.combined ? b : a));
+    const ranked = [...group].sort((a, b) => b.combined - a.combined || captureOrder(a, b));
+    const best = ranked[0];
+    const runnerUp = ranked[1];
+    const ambiguous = !!runnerUp && best.combined > 0
+      && runnerUp.combined >= best.combined * AMBIGUOUS_MARGIN;
     for (const it of group) {
       it.isBest = it === best;
-      it.selectedForEdit = group.length === 1 || !it.metrics || it.combined >= best.combined * AMBIGUOUS_MARGIN;
+      // Una sola propuesta automática por secuencia. En empate se conserva la ganadora
+      // determinista y se avisa para que la persona pueda comparar la alternativa.
+      it.selectedForEdit = it === best;
+      it.selectionAmbiguous = it === best && ambiguous;
+      it.selectionAnalysisUnavailable = it === best && !hasQualityMetrics(it);
       it.score = Math.round(it.combined * 100);
     }
   }
@@ -120,6 +130,8 @@ export function groupAndSelect(items) {
 }
 
 export const REVIEW_NOTES = {
+  [WARNING.TIE]: "Hay otra toma con una puntuación muy cercana. Se propone una sola ganadora; compara la alternativa antes de continuar.",
+  [WARNING.ANALYSIS_UNAVAILABLE]: "No se pudieron calcular las métricas de esta foto. La selección se basó en el orden de captura; revisa la toma manualmente.",
   [WARNING.GROUPING_UNCERTAIN]: "Agrupada solo por parecido visual (sin hora de captura en el archivo). Comprueba que es la misma toma y añade o quita fotos manualmente.",
   [WARNING.FACES_UNAVAILABLE]: "Las caras no se analizaron en esta foto. Revisa ojos y expresión manualmente antes de editar.",
 };
@@ -132,6 +144,8 @@ export function applyReviewFlags(photos, faceLayer = { available: true }) {
   for (const p of photos) {
     const types = [];
     if (p.groupUncertain) types.push(WARNING.GROUPING_UNCERTAIN);
+    if (p.selectionAmbiguous) types.push(WARNING.TIE);
+    if (p.selectionAnalysisUnavailable) types.push(WARNING.ANALYSIS_UNAVAILABLE);
     const needsFaces = size[p.burstId] > 1 || p.selectedForEdit;
     if (needsFaces && (!faceLayer.available || p.faceError)) types.push(WARNING.FACES_UNAVAILABLE);
     if (!types.length) continue;
