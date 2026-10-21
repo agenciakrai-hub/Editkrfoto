@@ -43,15 +43,16 @@ test("elige la MÁS nítida de la secuencia", () => {
   expect(selected).toEqual(["s1.CR3"]); // las claramente peores no entran
 });
 
-test("si hay empate/ambigüedad selecciona más de una", () => {
+test("si hay empate/ambigüedad propone una ganadora y marca la alternativa para revisión", () => {
   const items = [
     { name: "t1.CR3", metrics: M(100, 0.9, 0n) },
-    { name: "t2.CR3", metrics: M(98, 0.9, 0b11n) }, // casi igual -> también entra
+    { name: "t2.CR3", metrics: M(98, 0.9, 0b11n) }, // casi igual → revisión, no selección automática
     { name: "t3.CR3", metrics: M(30, 0.9, 0b101n) },
   ];
   const r = groupAndSelect(items);
   const selected = r.filter((x) => x.selectedForEdit).map((x) => x.name).sort();
-  expect(selected).toEqual(["t1.CR3", "t2.CR3"]);
+  expect(selected).toEqual(["t1.CR3"]);
+  expect(r.find((x) => x.name === "t1.CR3").selectionAmbiguous).toBe(true);
 });
 
 test("una foto única (escena aislada) siempre se selecciona", () => {
@@ -66,7 +67,8 @@ test("sin métricas (extracción fallida) no se descarta la foto", () => {
     { name: "x2.CR3", metrics: null },
   ];
   const r = groupAndSelect(items);
-  expect(r.every((x) => x.selectedForEdit)).toBe(true);
+  expect(r.filter((x) => x.selectedForEdit)).toHaveLength(1);
+  expect(r.find((x) => x.selectedForEdit).selectionAnalysisUnavailable).toBe(true);
 });
 
 test("auto-tono es POR FOTO (oscura sube exposición, clara la baja)", () => {
