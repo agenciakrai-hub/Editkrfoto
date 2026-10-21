@@ -1,4 +1,4 @@
-import { decideSequence, eyeState, assignSubjects, splitByMainFace, WARNING, MAX_SELECTED } from "./burstDecision";
+import { decideSequence, eyeState, assignSubjects, splitByMainFace, ensureBurstWinners, WARNING, MAX_SELECTED } from "./burstDecision";
 
 // Helpers -----------------------------------------------------------------
 const face = (cx, ear, { area = 0.1, smile = 0.5, det = 0.9, sharp = 0.7, cy = 0.5, w, roll = 0, yaw = 0 } = {}) => ({
@@ -70,7 +70,7 @@ test("eyeState clasifica open/partial/closed y unknown por baja confianza", () =
 });
 
 // --- Regla dura de ojos --------------------------------------------------
-test("grupo GRANDE: 1 parpadeo se tolera (no marca ojos cerrados y gana a otra con más parpadeos)", () => {
+test("grupo GRANDE: no permite ojos cerrados en una persona principal", () => {
   const row = (closedIdx) => Array.from({ length: 10 }, (_, i) =>
     face(0.05 + i * 0.095, closedIdx.includes(i) ? 0.10 : 0.30, { area: 0.03 }));
   const A = row([3]);        // 1 cerrado de 10 → tolerado (floor(10/8)=1)
@@ -78,9 +78,27 @@ test("grupo GRANDE: 1 parpadeo se tolera (no marca ojos cerrados y gana a otra c
   const res = decideSequence([photo("A", 0.8, A), photo("B", 0.8, B)]);
   expect(res.selectedPhoto).toBe("A");
   const ra = res.photos.find((p) => p.id === "A");
-  expect(ra.warningTypes).not.toContain(WARNING.CLOSED_EYES); // parpadeo tolerado en grupo grande
-  expect(ra.warning).toBe(false);
+  expect(ra.warningTypes).toContain(WARNING.CLOSED_EYES);
+  expect(ra.warning).toBe(true);
   expect(res.photos.find((p) => p.id === "B").selected).toBe(false);
+});
+
+test("ojos abiertos en la persona principal tienen prioridad frente a una toma más nítida con ojos cerrados", () => {
+  const res = decideSequence([
+    photo("closed-sharp", 0.95, [face(0.5, 0.10, { sharp: 0.98 })]),
+    photo("open", 0.80, [face(0.5, 0.30, { sharp: 0.72 })]),
+  ]);
+  expect(res.selectedPhoto).toBe("open");
+  expect(res.photos.find((p) => p.id === "closed-sharp").selected).toBe(false);
+});
+
+test("un ojo cerrado y otro abierto nunca se clasifica como mirada completamente abierta", () => {
+  expect(eyeState({ ear: 0.25, earLeft: 0.08, earRight: 0.42, detScore: 0.9 })).toBe("partial");
+  const res = decideSequence([
+    photo("blink", 0.95, [{ ...face(0.5, 0.25), earLeft: 0.08, earRight: 0.42 }]),
+    photo("open", 0.80, [face(0.5, 0.30)]),
+  ]);
+  expect(res.selectedPhoto).toBe("open");
 });
 
 test("ojos cerrados pierden ante una alternativa con ojos abiertos", () => {
@@ -146,6 +164,18 @@ test("secuencia de 1 foto → esa foto queda seleccionada", () => {
   const res = decideSequence([photo("solo", 0.7, [face(0.5, 0.30)])]);
   expect(res.selectedPhoto).toBe("solo");
   expect(res.photos[0].selected).toBe(true);
+});
+
+test("el guardarraíl rescata una foto por ráfaga vacía y marca el rescate para revisión", () => {
+  const photos = [
+    { id: "a", burstId: 1, score: 40, selectedForEdit: false },
+    { id: "b", burstId: 1, score: 70, selectedForEdit: false },
+    { id: "c", burstId: 2, score: 10, selectedForEdit: true },
+  ];
+  ensureBurstWinners(photos);
+  expect(photos.filter((p) => p.burstId === 1 && p.selectedForEdit).map((p) => p.id)).toEqual(["b"]);
+  expect(photos.find((p) => p.id === "b").warningTypes).toContain(WARNING.ANALYSIS_UNAVAILABLE);
+  expect(photos.find((p) => p.id === "c").warningTypes).toBeUndefined();
 });
 
 // --- Empate --------------------------------------------------------------

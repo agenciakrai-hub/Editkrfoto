@@ -6,7 +6,7 @@ import * as faceapi from "@vladmandic/face-api";
 import { extractThumb } from "@/lib/rawThumb";
 import { mapLimit } from "@/lib/imageAnalysis";
 import { clusterFaces, eyeAspectRatio, photoFaceScore } from "@/lib/faceLogic";
-import { decideSequence, splitByMainFace } from "@/lib/burstDecision";
+import { decideSequence, splitByMainFace, ensureBurstWinners } from "@/lib/burstDecision";
 
 let modelsPromise = null;
 
@@ -117,14 +117,16 @@ export async function detectFacesFromUrl(url) {
     .withFaceLandmarks().withFaceExpressions().withFaceDescriptors();
   return res.map((r) => {
     const pts = r.landmarks.positions;
-    const ear = (eyeAspectRatio(pts.slice(36, 42)) + eyeAspectRatio(pts.slice(42, 48))) / 2;
+    const earLeft = eyeAspectRatio(pts.slice(36, 42));
+    const earRight = eyeAspectRatio(pts.slice(42, 48));
+    const ear = (earLeft + earRight) / 2;
     const smile = r.expressions?.happy ?? 0;
     const box = r.detection.box;
     const crop = measureFaceSharpness(img, box);
     return {
       cx: (box.x + box.width / 2) / W, cy: (box.y + box.height / 2) / H,
       w: box.width / W, h: box.height / H, score: r.detection.score,
-      descriptor: Array.from(r.descriptor), ear, smile, area: (box.width / W) * (box.height / H),
+      descriptor: Array.from(r.descriptor), ear, earLeft, earRight, smile, area: (box.width / W) * (box.height / H),
       faceSharpness: crop.sharpness, luma: crop.luma, skin: crop.skin, pose: computePose(pts),
     };
   });
@@ -204,8 +206,8 @@ export async function applyFaceLayer(photos, onProgress) {
     technicalScore: (p.score ?? 50) / 100,
     photometrics: p.photometrics || null,
     faces: (p.faces || []).map((f) => ({
-      cx: f.cx, cy: f.cy, area: f.area, ear: f.ear, smile: f.smile,
-      w: f.w, h: f.h, detScore: f.score, faceSharpness: f.faceSharpness,
+      cx: f.cx, cy: f.cy, area: f.area, ear: f.ear, earLeft: f.earLeft, earRight: f.earRight, smile: f.smile,
+      w: f.w, h: f.h, pose: f.pose, detScore: f.score, faceSharpness: f.faceSharpness,
     })),
   });
   let doubts = 0;
@@ -241,6 +243,7 @@ export async function applyFaceLayer(photos, onProgress) {
       }
     }
   }
+  ensureBurstWinners(photos);
   const rescued = 0;
 
   // Reconocimiento → agrupa personas (protagonistas) por descriptor facial.
