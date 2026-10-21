@@ -47,7 +47,7 @@ export const WARNING_LABELS = {
 
 // --- Umbrales -------------------------------------------------------------
 export const TECH_MIN = 0.45;      // validez técnica mínima (0..1)
-export const EAR_OPEN = 0.23;      // >= abierto
+export const EAR_OPEN = 0.20;      // >= abierto (umbral compartido con faceLogic)
 export const EAR_CLOSED = 0.15;    // < cerrado ; entre ambos = parpadeo
 export const DET_MIN = 0.5;        // confianza de detección mínima; si no → ojo "unknown"
 export const MAIN_AREA_RATIO = 0.4; // sujeto principal si área >= 40% de la cara mayor
@@ -105,8 +105,18 @@ function clamp01(v) { return clamp(v, 0, 1); }
 
 // Estado del ojo SIN inventar certeza: si no hay landmarks/confianza fiable → "unknown".
 export function eyeState(face) {
-  if (!face || !Number.isFinite(face.ear)) return "unknown";
+  if (!face) return "unknown";
   if ((face.detScore ?? 1) < DET_MIN) return "unknown";
+  // Cuando hay EAR por ojo, exigimos que ambos ojos parezcan abiertos.
+  // Un ojo cerrado y otro abierto se clasifica como parpadeo, nunca como abierto.
+  if (Number.isFinite(face.earLeft) && Number.isFinite(face.earRight)) {
+    const low = Math.min(face.earLeft, face.earRight);
+    const high = Math.max(face.earLeft, face.earRight);
+    if (low >= EAR_OPEN) return "open";
+    if (high < EAR_CLOSED) return "closed";
+    return "partial";
+  }
+  if (!Number.isFinite(face.ear)) return "unknown";
   if (face.ear >= EAR_OPEN) return "open";
   if (face.ear >= EAR_CLOSED) return "partial";
   return "closed";
@@ -253,12 +263,16 @@ function evalPhoto(p, subjects, trackingUncertain) {
 
   const score = hasPeople ? Math.round(0.45 * technicalScore + 0.55 * faceScore) : technicalScore;
   const mainsNotOpen = mains.filter((s) => s.eyeState !== "open").length;
-  const allMainOpen = mains.length > 0 && mainsNotOpen <= eyeTolerance;
+  // No se permite compensar ojos cerrados/parpadeando en personas principales,
+  // ni siquiera en grupos grandes. La tolerancia solo aplica a invitados secundarios.
+  const allMainOpen = mains.length > 0 && mainsNotOpen === 0;
 
   // Warnings intrínsecos de la foto (los de selección se añaden al decidir).
   const warningTypes = [];
-  if (closed.length > eyeTolerance) warningTypes.push(WARNING.CLOSED_EYES);
-  if (partial.length > eyeTolerance) warningTypes.push(WARNING.PARTIAL_BLINK);
+  const mainClosed = mains.some((s) => s.eyeState === "closed");
+  const mainPartial = mains.some((s) => s.eyeState === "partial");
+  if (mainClosed || closed.length > eyeTolerance) warningTypes.push(WARNING.CLOSED_EYES);
+  if (mainPartial || partial.length > eyeTolerance) warningTypes.push(WARNING.PARTIAL_BLINK);
   if (sharpnessScore < LOW_SHARP) warningTypes.push(WARNING.LOW_SHARPNESS);
   if (!exposureOk) warningTypes.push(WARNING.EXPOSURE);
   if (occluded.length) warningTypes.push(WARNING.FACE_OCCLUDED);
@@ -303,7 +317,16 @@ export function decideSequence(photos, sequenceId = null) {
   const techValid = evals.filter((e) => e.techValid);
   const cleanPool = techValid.filter((e) => e.clean);
   const pool = cleanPool.length ? cleanPool : (techValid.length ? techValid : evals);
-  const sorted = [...pool].sort((a, b) => b.score - a.score);
+  const eyeRank = (e) => {
+    const main = e.subjects.filter((s) => s.isMain);
+    if (!main.length) return 1;
+    if (main.some((s) => s.eyeState === "closed")) return 0;
+    if (main.some((s) => s.eyeState !== "open")) return 1;
+    return 2;
+  };
+  // Si no existe una toma perfecta, primero se comparan los ojos de las personas
+  // principales; la nitidez/expresión solo desempata dentro de la misma categoría.
+  const sorted = [...pool].sort((a, b) => eyeRank(b) - eyeRank(a) || b.score - a.score);
   const best = sorted[0];
   const fromClean = cleanPool.includes(best);
 
@@ -372,4 +395,29 @@ export function decideAllBursts(photos, buildInput) {
     res.photos.forEach((rp) => { byId[rp.id] = rp; });
   }
   return { byId, sequences };
+}
+
+// Cinturón de seguridad para la capa de integración: ninguna ráfaga procesada
+// puede llegar a revisión con cero seleccionadas por un fallo de mapeo/estado.
+export function ensureBurstWinners(photos) {
+  const groups = new Map();
+  for (const p of photos || []) {
+    const key = p.burstId ?? `photo:${p.id ?? p.name}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+  for (const group of groups.values()) {
+    if (group.some((p) => p.selectedForEdit || p.selected)) continue;
+    const winner = [...group].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)
+      || String(a.name || a.id || "").localeCompare(String(b.name || b.id || ""), undefined, { numeric: true }))[0];
+    if (!winner) continue;
+    winner.selectedForEdit = true;
+    winner.warning = true;
+    winner.doubt = true;
+    winner.state = "SELECTED_WARNING";
+    winner.reason = "rescate de seguridad: no había ganadora asignada; revisar manualmente";
+    winner.selectionConfidence = Math.min(winner.selectionConfidence ?? 20, 20);
+    winner.warningTypes = Array.from(new Set([...(winner.warningTypes || []), WARNING.ANALYSIS_UNAVAILABLE]));
+  }
+  return photos;
 }
