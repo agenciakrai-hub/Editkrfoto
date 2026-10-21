@@ -61,16 +61,26 @@ test("una foto única (escena aislada) siempre se selecciona", () => {
   expect(r[0].selectedForEdit).toBe(true);
 });
 
-test("sin métricas (extracción fallida) no se descarta la foto", () => {
+test("sin métricas ni hash no se pueden agrupar; conserva cada foto como secuencia aislada", () => {
   const items = [
     { name: "x1.CR3", metrics: null },
     { name: "x2.CR3", metrics: null },
   ];
   const r = groupAndSelect(items);
+  expect(r.filter((x) => x.selectedForEdit)).toHaveLength(2);
+  expect(r.every((x) => x.selectionAnalysisUnavailable)).toBe(true);
+});
+
+test("con hash pero sin métricas de calidad propone una sola ganadora y avisa", () => {
+  const items = [
+    { name: "y1.CR3", metrics: { hash: 0n } },
+    { name: "y2.CR3", metrics: { hash: 0n } },
+  ];
+  const r = groupAndSelect(items);
+  expect(new Set(r.map((x) => x.burstId)).size).toBe(1);
   expect(r.filter((x) => x.selectedForEdit)).toHaveLength(1);
   expect(r.find((x) => x.selectedForEdit).selectionAnalysisUnavailable).toBe(true);
 });
-
 test("auto-tono es POR FOTO (oscura sube exposición, clara la baja)", () => {
   const dark = histAround(60);
   const bright = histAround(190);
