@@ -8,7 +8,7 @@ jest.mock('@/lib/api',()=>({__esModule:true,default:{get:jest.fn(),patch:jest.fn
 jest.mock('@/lib/workspaceCache',()=>({...jest.requireActual('@/lib/workspaceCache'),readPhoto:jest.fn(),readDirectoryHandle:jest.fn(),readDirectoryPermission:jest.fn(),filesFromDirectory:jest.fn()}));
 jest.mock('@/components/AppShell',()=>({children})=><div>{children}</div>);
 jest.mock('@/components/studio/Stepper',()=>()=>null);
-jest.mock('@/components/studio/SelectionStep',()=>()=>null);
+jest.mock('@/components/studio/SelectionStep',()=>()=> <div data-testid="selection-engine-mounted"/>);
 jest.mock('@/components/studio/ReviewStep',()=>p=><div data-testid="restored-gallery">{p.initialPhotos.map(x=><span key={x.id}>{x.name}:{String(x.selectedForEdit)}:{x.source}:{x.file?'linked':'offline'}</span>)}</div>);
 jest.mock('@/components/studio/ProfilePresetStep',()=>()=>null);
 jest.mock('@/components/studio/ReportStep',()=>p=><div data-testid="restored-report">{JSON.stringify({report:p.report,payload:p.payload})}</div>);
@@ -46,6 +46,19 @@ test('reopening relinks originals automatically when the saved directory permiss
  expect(filesFromDirectory).toHaveBeenCalledWith(handle);
  expect(host.textContent).toContain('Carpeta original conectada.');
  expect(host.querySelector('[data-testid="folder-input"]')).toBeNull();
+});
+
+test('saved review offers an explicit reanalysis and mounts the selection engine',async()=>{
+ const file=new File(['raw'],'A.DNG',{lastModified:123});
+ Object.defineProperty(file,'webkitRelativePath',{value:'Wedding/A.DNG'});
+ const handle={name:'Wedding'};
+ readDirectoryHandle.mockResolvedValue({handle});readDirectoryPermission.mockResolvedValue('granted');filesFromDirectory.mockResolvedValue([file]);
+ await open({workspacePhotos:[{id:'a',name:'A.DNG',size:file.size,lastModified:123,relativePath:'Wedding/A.DNG',selectedForEdit:true}]});
+ const button=host.querySelector('[data-testid="reanalyze-selection-btn"]');
+ expect(button).not.toBeNull();expect(button.disabled).toBe(false);
+ await act(async()=>button.click());
+ expect(api.patch).toHaveBeenCalledWith('/folders/f/state',expect.objectContaining({workspaceStep:'selection',selectionCompleted:false}));
+ expect(host.querySelector('[data-testid="selection-engine-mounted"]')).not.toBeNull();
 });
 
 test('legacy photos without file metadata relink by unique relative path',async()=>{

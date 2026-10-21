@@ -85,5 +85,6 @@ export function restorePhotos(state) {
 export function savedStep(state) {
   if(state.report && state.presetInfo) return 'report';
   if(state.workspaceStep==='mode' && state.presetInfo) return 'mode';
+  if(state.workspaceStep==='selection' && state.selectionCompleted===false) return 'selection';
   return 'review';
 }
