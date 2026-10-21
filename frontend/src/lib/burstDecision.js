@@ -26,6 +26,7 @@ export const WARNING = {
   TIE: "WARNING_TIE",
   GROUPING_UNCERTAIN: "WARNING_GROUPING_UNCERTAIN",
   FACES_UNAVAILABLE: "WARNING_FACES_UNAVAILABLE",
+  ANALYSIS_UNAVAILABLE: "WARNING_ANALYSIS_UNAVAILABLE",
 };
 
 export const WARNING_LABELS = {
@@ -41,6 +42,7 @@ export const WARNING_LABELS = {
   WARNING_TIE: "Empate (elige tú)",
   WARNING_GROUPING_UNCERTAIN: "Agrupación dudosa",
   WARNING_FACES_UNAVAILABLE: "Caras sin analizar",
+  WARNING_ANALYSIS_UNAVAILABLE: "Análisis incompleto",
 };
 
 // --- Umbrales -------------------------------------------------------------
@@ -52,7 +54,7 @@ export const MAIN_AREA_RATIO = 0.4; // sujeto principal si área >= 40% de la ca
 export const POS_TOL = 0.12;       // tolerancia de emparejamiento de sujetos (distancia)
 export const MOVE_TOL = 0.10;      // movimiento por encima → seguimiento incierto
 export const TIE_RATIO = 0.97;     // 2ª candidata >= 97% de la mejor → empate real
-export const MAX_SELECTED = 2;     // máximo de fotos SELECTED+WARNING por empate
+export const MAX_SELECTED = 1;     // una ganadora automática; los empates se muestran como advertencia
 export const LOW_SHARP = 45;       // sharpnessScore por debajo → poca nitidez
 export const VIS_LOW = 0.5;        // visibilidad por debajo → cara tapada/cortada
 export const FACE_SHARP_FLOOR = 0.12; // nitidez facial absoluta mínima (evita excluir todo si todas son blandas)
@@ -305,16 +307,13 @@ export function decideSequence(photos, sequenceId = null) {
   const best = sorted[0];
   const fromClean = cleanPool.includes(best);
 
-  // Empate real → hasta MAX_SELECTED (todas SELECTED+WARNING).
+  // Una sola ganadora automática. Si la segunda queda muy cerca, se advierte
+  // para que la persona compare ambas sin incorporar una alternativa al lote.
   const selectedIds = new Set([best.id]);
-  for (let i = 1; i < sorted.length && selectedIds.size < MAX_SELECTED; i++) {
-    if (best.score > 0 && sorted[i].score >= best.score * TIE_RATIO) selectedIds.add(sorted[i].id);
-    else break;
-  }
-  const tie = selectedIds.size > 1;
+  const runnerUp = sorted[1];
+  const tie = !!runnerUp && best.score > 0 && runnerUp.score >= best.score * TIE_RATIO;
 
   // Confianza de la secuencia.
-  const runnerUp = sorted[1];
   const gap = runnerUp ? best.score - runnerUp.score : 100;
   let confidence;
   if (!techValid.length) confidence = 25;
